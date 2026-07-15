@@ -16,7 +16,37 @@ from idea.providers import (
     ProviderRunner,
     ProviderStatus,
     SearchQuery,
+    parse_exa_patent_markdown,
 )
+
+
+PATENT_MARKDOWN = """# US8816648B2 - Adaptive battery charging - Google Patents
+
+## Info
+
+Publication number US8816648B2 Application number US12/542,411 Prior art date 2009-08-17 Current Assignee (The listed assignees may be inaccurate.) Apple Inc Original Assignee Apple Inc Priority date (not a legal conclusion) 2009-08-17 Filing date 2009-08-17 Publication date 2014-08-26
+
+## Abstract
+
+Charge a battery using temperature-dependent current and voltage stages.
+
+## Description
+
+The controller measures battery temperature.
+
+It chooses a charging table for the measured range.
+
+## Claims (2)
+
+1. A charging method comprising measuring battery temperature and selecting charging stages.
+
+2. The method of claim 1, wherein the battery is a lithium battery.
+
+## Publications (2)
+
+| Publication Number | Publication Date |
+| US8816648B2 | 2014-08-26 |
+"""
 
 
 class McpProtocolTests(unittest.TestCase):
@@ -130,6 +160,70 @@ class ExaProviderTests(unittest.TestCase):
         self.assertEqual(result.status, ProviderStatus.SUCCESS)
         self.assertIn("Fetched patent content", result.document.description_text)
         self.assertFalse(result.document.raw_metadata["structured_sections"])
+        self.assertEqual(self.calls[-1][1]["urls"], ["https://patents.google.com/patent/EP0965918A2/en"])
+        self.assertEqual(
+            self.calls[-1][1]["maxCharacters"], self.settings.fetch_max_characters
+        )
+
+    def test_google_patents_markdown_is_split_into_metadata_and_evidence_sections(self) -> None:
+        document = parse_exa_patent_markdown(
+            PATENT_MARKDOWN,
+            provider="exa_mcp",
+            publication_number="US8816648B2",
+            url="https://patents.google.com/patent/US8816648B2/en",
+            language="en",
+        )
+        self.assertEqual(document.title, "Adaptive battery charging")
+        self.assertEqual(document.application_number, "US12/542,411")
+        self.assertEqual(document.assignee, "Apple Inc")
+        self.assertEqual(document.priority_date, "2009-08-17")
+        self.assertEqual(document.publication_date, "2014-08-26")
+        self.assertIn("temperature-dependent", document.abstract_text)
+        self.assertIn("2. The method", document.claims_text)
+        self.assertEqual(len(document.section_spans["claims"]), 2)
+        self.assertEqual(document.section_spans["claims"][0]["label"], "claim 1")
+        claim_span = document.section_spans["claims"][1]
+        self.assertEqual(
+            document.claims_text[claim_span["start"] : claim_span["end"]],
+            claim_span["text"],
+        )
+        self.assertTrue(document.raw_metadata["structured_sections"])
+
+    def test_compact_exa_markdown_without_heading_or_metadata_spaces_is_supported(self) -> None:
+        compact = PATENT_MARKDOWN.replace(
+            "\n\n## Info\n\nPublication number ", ")## Info\nPublication number"
+        ).replace(" Application number ", "Application number").replace(
+            " Priority date ", "Priority date"
+        ).replace(" Filing date ", "Filing date").replace(
+            " Publication date ", "Publication date"
+        )
+        document = parse_exa_patent_markdown(
+            compact,
+            provider="exa_mcp",
+            publication_number="US8816648B2",
+            url="https://patents.google.com/patent/US8816648B2/en",
+            language="en",
+        )
+        self.assertEqual(document.application_number, "US12/542,411")
+        self.assertEqual(document.priority_date, "2009-08-17")
+        self.assertEqual(document.publication_date, "2014-08-26")
+        self.assertEqual(len(document.section_spans["claims"]), 2)
+
+    def test_metadata_survives_when_exa_truncates_before_text_sections(self) -> None:
+        truncated = """PDF)## Info
+Publication numberUS11397216B2Application numberUS16/183,559Other versionsUS20190072618A1 InventorAda Current Assignee (may be inaccurate.) Qnovo Inc Original AssigneeQnovo IncPriority date (not legal)2010-05-21Filing date2018-11-07Publication date2022-07-26
+"""
+        document = parse_exa_patent_markdown(
+            truncated,
+            provider="exa_mcp",
+            publication_number="US11397216B2",
+            url="https://patents.google.com/patent/US11397216B2/en",
+            language="en",
+        )
+        self.assertEqual(document.application_number, "US16/183,559")
+        self.assertEqual(document.publication_date, "2022-07-26")
+        self.assertFalse(document.raw_metadata["structured_sections"])
+        self.assertIn("Publication number", document.description_text)
 
     def test_mcp_failure_is_not_success(self) -> None:
         async def failing(tool, arguments):

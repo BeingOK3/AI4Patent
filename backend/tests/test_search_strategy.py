@@ -123,6 +123,28 @@ class SearchStrategyTests(unittest.TestCase):
         self.assertNotIn("US-WEAK-A1", [item.hit.publication_number for item in selection.selected])
         self.assertNotIn("US-LATE-A1", [item.hit.publication_number for item in selection.selected])
 
+    def test_bilingual_term_groups_require_two_concepts_not_one_generic_match(self) -> None:
+        hits = [
+            merged(
+                "CN-STRONG-A1",
+                "自适应电池充电控制",
+                "采集电芯温度和内阻并动态调整充电电流",
+            ),
+            merged("CN-WEAK-A1", "电池外壳", "一种通用电池结构"),
+        ]
+        screened = screen_summaries(
+            hits,
+            idea_terms=["充电控制", "adaptive charging", "电芯温度", "cell temperature"],
+            term_groups=[
+                ["充电控制", "adaptive charging"],
+                ["电芯温度", "cell temperature", "内阻", "internal resistance"],
+            ],
+            evaluation_date=date(2026, 7, 16),
+        )
+        scores = {item.hit.publication_number: item.relevance_score for item in screened}
+        self.assertGreaterEqual(scores["CN-STRONG-A1"], 0.15)
+        self.assertLess(scores["CN-WEAK-A1"], 0.15)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ from idea.agent_schemas import IdeaParserOutput, NoveltyResult, QueryPlannerOutp
 from idea.config import load_config
 from idea.database import Database
 from idea.execution import WorkflowExecutor
+from idea.providers import FetchedDocument
 from idea.retrieval import FetchResult, RetrievalResult
 from idea.run_store import RunStore
 from idea.search_strategy import StopReason
@@ -86,7 +87,20 @@ class FakeRetrieval:
         )
 
     async def fetch_selected(self, **kwargs):
-        return FetchResult(documents=[], document_ids={}, limitations=[])
+        documents = [
+            FetchedDocument(
+                provider="fixture",
+                publication_number=f"US{index}A1",
+                url=f"https://patents.google.com/patent/US{index}A1/en",
+                claims_text="1. fixture claim",
+            )
+            for index in range(1, 11)
+        ]
+        return FetchResult(
+            documents=documents,
+            document_ids={item.publication_number: f"doc-{index}" for index, item in enumerate(documents)},
+            limitations=[],
+        )
 
 
 class FakeDocuments:

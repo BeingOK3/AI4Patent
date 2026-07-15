@@ -55,7 +55,8 @@
         "max_attempts": 3,
         "endpoint": "https://mcp.exa.ai/mcp",
         "search_tool": "web_search_exa",
-        "fetch_tool": "crawling_exa"
+        "fetch_tool": "web_fetch_exa",
+        "fetch_max_characters": 300000
       },
       "google_patents_local": {
         "enabled": true,

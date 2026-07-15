@@ -353,3 +353,19 @@
 - 测试：Skill CLI 5 项合约测试全部通过；Skill Creator `quick_validate.py` 通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，143 项全部通过；实际 Uvicorn 下执行 health/history 冒烟通过；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-SKILL-001] route IDEA skill through workflow`
 - 已知限制：当前主机访问 Google Patents 直连仍可能超时并显示 degraded；这不会被伪装成成功，本地缓存和 EXA 备路仍由后端按真实状态工作。完整在线 Run 在下一工作单元验证。
+
+## 2026-07-16 — IDEA-E2E-001
+
+- 类型：真实模型/Provider E2E、EXA 契约加固、筛选与部署收口
+- 目标：使用真实 DeepSeek、EXA MCP、本地 Google Patents、固定 11 步 Workflow 和薄 Skill 完成至少 10 篇全文深读的权威报告，并把在线验证暴露的问题转为程序约束和回归测试。
+- 在线发现与修复：EXA 已移除 `crawling_exa`，改用当前 `web_fetch_exa` 的 `urls[] + maxCharacters` 契约；全文预算统一配置为 300000；新增 Google Patents Markdown 结构解析，兼容标题紧贴、字段无空格和超长页面，提取 Info/摘要/权利要求/说明书及可定位 spans。
+- 检索漏斗：摘要阶段改用 Query Planner 的中英双语概念组，不再用中文长特征做整句包含；具体概念命中可进入全文核验，无概念命中仍不凑数。全文少于用户下限时在抓取步骤强制失败，不得进入新颖性和报告。
+- 降级性能：依据本 Run 检索调用的真实成功/失败统计排列全文 Provider；检索全部失败的 Provider 降为备路，主路抓取失败时仍尝试，避免每篇重复等待已知超时。
+- 失败样本留存：真实测试前四个 Run 分别暴露零篇筛选、仅 5 篇强筛选、CN 紧凑 Info 丢日期、超长 US 页面截断问题，均以 FAILED 终态保留，没有删除、覆盖或伪装为完成。
+- 成功 E2E：Run `1e4020cb-9e28-4823-8b49-a46ce7a76c3a` 在 241895 ms 内达到 `COMPLETED_WITH_LIMITATIONS`；4 次 EXA 搜索返回 40 条、10 次 EXA 全文全部成功、10 篇全部深读、180 条 evidence、20 次结构化模型调用成功、11/11 步通过、critical=0。报告直接结论为 `NOVEL`，置信度 0.525；本地 Google 4 次检索超时作为唯一限制明确保存。
+- 权威产物：`report.json` 343171 bytes、`report.md` 7551 bytes、`manifest.json` 810 bytes；通过报告 API Manifest 复验，Case/Run 历史和失败 Run 均可在刷新后恢复。
+- 部署与文档：README 改为 IDEA-only 使用说明；IDEA 启动不再强制安装 OpenCode 引擎，旧能力可通过 `INSTALL_OPENCODE=1` 可选安装；启动就绪探针改查本地 OpenAPI，外部 Provider 健康不再造成服务启动误报；技术设计升级为 1.1，并记录“深读不足 10 必须失败”和真实 MCP 契约。
+- 涉及文件：`backend/idea/config.py`、`backend/idea/execution.py`、`backend/idea/providers/exa.py`、`backend/idea/retrieval.py`、`backend/idea/search_strategy.py`、相关测试、`config/ai4patent.json`、Schema、`README.md`、`install.sh`、`start.sh`、`dev.sh`、技术设计和本日志。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，148 项全部通过；Skill quick validate、`compileall`、配置/Schema JSON、4 个 shell 脚本语法、`git diff --check` 全部通过；`start.sh → 首页/API 历史 → stop.sh` 真实部署冒烟通过且无残留服务。
+- 提交主题：`feat(idea): [IDEA-E2E-001] harden live retrieval and finish IDEA`
+- 已知限制：本机当前无法直连 Google Patents，因此成功 Run 为 EXA 单路在线降级状态；本地 Provider 已实现但不是离线镜像。FastAPI 测试仍提示 Starlette `httpx` 兼容层弃用警告，不影响本次 148 项结果，后续依赖升级需单独处理。

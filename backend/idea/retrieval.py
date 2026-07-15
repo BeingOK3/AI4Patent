@@ -98,6 +98,11 @@ class RetrievalService:
         previous_keys: set[str] = set()
         previous_high_keys: set[str] = set()
         stop_reason: StopReason | None = None
+        term_groups = [
+            [group.concept, *group.zh_terms, *group.en_terms, *group.broader_terms]
+            for group in plan.term_groups
+        ]
+        screening_terms = [term for group in term_groups for term in group] or idea_terms
 
         for round_number in sorted(queries_by_round):
             call_specs = []
@@ -134,7 +139,10 @@ class RetrievalService:
 
             merged = merge_hits(batches)[: budget.candidate_max]
             screened = screen_summaries(
-                merged, idea_terms=idea_terms, evaluation_date=evaluation_date
+                merged,
+                idea_terms=screening_terms,
+                evaluation_date=evaluation_date,
+                term_groups=term_groups,
             )
             current_keys = {hit.merge_key for hit in merged}
             high_keys = {
@@ -165,7 +173,12 @@ class RetrievalService:
                 break
 
         merged = merge_hits(batches)[: budget.candidate_max]
-        screened = screen_summaries(merged, idea_terms=idea_terms, evaluation_date=evaluation_date)
+        screened = screen_summaries(
+            merged,
+            idea_terms=screening_terms,
+            evaluation_date=evaluation_date,
+            term_groups=term_groups,
+        )
         selection = select_deep_review(screened, budget)
         if selection.limitation:
             limitations.append(selection.limitation)
@@ -210,11 +223,29 @@ class RetrievalService:
             if hit.publication_number
         }
         semaphore = asyncio.Semaphore(self.fetch_concurrency)
+        provider_priority = sorted(
+            self.providers,
+            key=lambda provider: (
+                0
+                if retrieval.provider_calls.get(provider.name, {}).get(
+                    ProviderStatus.SUCCESS.value, 0
+                )
+                or retrieval.provider_calls.get(provider.name, {}).get(
+                    ProviderStatus.EMPTY.value, 0
+                )
+                else 1,
+                0
+                if isinstance(provider, GooglePatentsProvider)
+                else 1 if isinstance(provider, ExaMcpProvider) else 2,
+            ),
+        )
 
         async def fetch_one(publication: str):
             async with semaphore:
                 hit = by_publication[publication]
-                return await self._fetch_with_fallback(run_id, publication, hit.urls, language)
+                return await self._fetch_with_fallback(
+                    run_id, publication, hit.urls, language, providers=provider_priority
+                )
 
         outcomes = await asyncio.gather(
             *[fetch_one(publication) for publication in retrieval.selected_publication_numbers]
@@ -250,21 +281,35 @@ class RetrievalService:
         )
 
     async def _fetch_with_fallback(
-        self, run_id: str, publication: str, urls: list[str], language: str
+        self,
+        run_id: str,
+        publication: str,
+        urls: list[str],
+        language: str,
+        *,
+        providers: list[SearchProvider] | None = None,
     ) -> tuple[FetchedDocument | None, list[dict[str, str]]]:
-        ordered = sorted(
+        ordered = providers or sorted(
             self.providers,
             key=lambda provider: (
-                0 if isinstance(provider, GooglePatentsProvider) else 1 if isinstance(provider, ExaMcpProvider) else 2
+                0
+                if isinstance(provider, GooglePatentsProvider)
+                else 1 if isinstance(provider, ExaMcpProvider) else 2
             ),
         )
         failures = []
         for provider in ordered:
+            selected_url = next((url for url in urls if "/patent/" in url), None)
+            url_language = (
+                selected_url.rstrip("/").rsplit("/", 1)[-1]
+                if selected_url
+                else language
+            )
             request = FetchRequest(
                 request_id=f"{run_id}:FETCH:{publication}:{provider.name}",
                 publication_number=publication,
-                url=next((url for url in urls if "/patent/" in url), None),
-                language=language,
+                url=selected_url,
+                language=url_language if url_language in {"zh", "en"} else language,
             )
             result = await self.runner.fetch(
                 provider,

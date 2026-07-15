@@ -55,7 +55,7 @@ fi
 
 mkdir -p "$ENGINE_DIR" "$ROOT/logs" "$ROOT/data/opencode" "$ROOT/workspace/uploads"
 
-if [[ ! -x "$ENGINE" ]]; then
+if [[ "${INSTALL_OPENCODE:-0}" == "1" && ! -x "$ENGINE" ]]; then
     archive="opencode-$target.tar.gz"
     url="${OPENCODE_DOWNLOAD_URL:-https://github.com/anomalyco/opencode/releases/latest/download/$archive}"
     temp_dir="$(mktemp -d)"
@@ -66,8 +66,10 @@ if [[ ! -x "$ENGINE" ]]; then
     tar -xzf "$temp_dir/$archive" -C "$temp_dir"
     install -m 755 "$temp_dir/opencode" "$ENGINE"
     echo "  ✓ OpenCode 已安装"
-else
+elif [[ -x "$ENGINE" ]]; then
     echo "[1/4] OpenCode 已存在，跳过"
+else
+    echo "[1/4] IDEA Workflow 不依赖 OpenCode 引擎，跳过（如需旧功能可设 INSTALL_OPENCODE=1）"
 fi
 
 if [[ ! -d "$VENV" ]]; then
@@ -83,7 +85,7 @@ echo "[3/4] 运行目录已就绪"
 if [[ -f "$ROOT/data/opencode/auth.json" ]]; then
     echo "[4/4] 已检测到 API 配置"
 else
-    echo "[4/4] 尚未配置 API Key；启动后在网页设置中填写即可"
+    echo "[4/4] 尚未配置 API Key；请设置 DEEPSEEK_API_KEY 或 data/opencode/auth.json"
 fi
 
 echo

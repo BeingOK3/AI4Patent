@@ -94,6 +94,7 @@ class ExaSettings(ProviderSettings):
     endpoint: HttpUrl
     search_tool: str = Field(min_length=1)
     fetch_tool: str = Field(min_length=1)
+    fetch_max_characters: int = Field(ge=10_000, le=500_000)
 
 
 class GooglePatentsSettings(ProviderSettings):

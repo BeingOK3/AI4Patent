@@ -30,6 +30,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.search.mode().deep_review_min, 10)
         self.assertTrue(config.storage.database.is_absolute())
         self.assertEqual(config.model.default, "deepseek-v4-flash")
+        self.assertEqual(config.search.providers.exa_mcp.fetch_tool, "web_fetch_exa")
+        self.assertEqual(config.search.providers.exa_mcp.fetch_max_characters, 300_000)
         snapshot = config.snapshot()
         self.assertNotIn("api_key", snapshot["model"])
         self.assertNotIn("apiKey", snapshot["model"])

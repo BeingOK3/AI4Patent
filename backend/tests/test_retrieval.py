@@ -149,6 +149,17 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertEqual(documents, 10)
         self.assertEqual(run_documents, 10)
 
+    def test_fetch_prioritizes_provider_that_succeeded_during_this_run(self) -> None:
+        local = FakeProvider("google_patents_local", fail_search=True)
+        exa = FakeProvider("exa_mcp")
+        service, result = self.retrieve([local, exa])
+        fetched = asyncio.run(
+            service.fetch_selected(run_id=self.run["run_id"], retrieval=result)
+        )
+        self.assertEqual(len(fetched.documents), 10)
+        self.assertEqual(exa.fetch_calls, 10)
+        self.assertEqual(local.fetch_calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

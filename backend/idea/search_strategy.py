@@ -156,8 +156,14 @@ def screen_summaries(
     *,
     idea_terms: Iterable[str],
     evaluation_date: date,
+    term_groups: Iterable[Iterable[str]] | None = None,
 ) -> list[ScreenedCandidate]:
     normalized_terms = {_normalize_term(term) for term in idea_terms if _normalize_term(term)}
+    normalized_groups = [
+        {_normalize_term(term) for term in group if _normalize_term(term)}
+        for group in (term_groups or [])
+    ]
+    normalized_groups = [group for group in normalized_groups if group]
     screened = []
     for hit in hits:
         date_status: Literal["ELIGIBLE", "AFTER_EVALUATION_DATE", "UNKNOWN"] = "UNKNOWN"
@@ -171,9 +177,20 @@ def screen_summaries(
                 date_status = "UNKNOWN"
         searchable = _normalize_term(f"{hit.title} {hit.snippet}")
         matched = tuple(sorted(term for term in normalized_terms if term in searchable))
-        coverage = len(matched) / max(1, len(normalized_terms))
         title_matches = sum(1 for term in matched if term in _normalize_term(hit.title))
-        score = min(1.0, coverage * 0.75 + min(0.25, title_matches * 0.08))
+        if normalized_groups:
+            group_matches = sum(
+                1 for group in normalized_groups if any(term in searchable for term in group)
+            )
+            score = min(
+                1.0,
+                group_matches / len(normalized_groups) * 0.7
+                + min(0.2, len(matched) * 0.05)
+                + min(0.1, title_matches * 0.05),
+            )
+        else:
+            coverage = len(matched) / max(1, len(normalized_terms))
+            score = min(1.0, coverage * 0.75 + min(0.25, title_matches * 0.08))
         screened.append(
             ScreenedCandidate(
                 hit=hit,

@@ -9,7 +9,7 @@ from .base import (
     SearchQuery,
 )
 from .google_patents import GooglePatentsProvider, parse_patent_html, parse_search_html
-from .exa import ExaMcpProvider, McpHttpClient, McpProtocolError
+from .exa import ExaMcpProvider, McpHttpClient, McpProtocolError, parse_exa_patent_markdown
 
 __all__ = [
     "FetchRequest",
@@ -26,4 +26,5 @@ __all__ = [
     "ExaMcpProvider",
     "McpHttpClient",
     "McpProtocolError",
+    "parse_exa_patent_markdown",
 ]

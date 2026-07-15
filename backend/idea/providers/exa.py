@@ -206,6 +206,120 @@ def _publication_from_url(url: str) -> str | None:
     return match.group(1).replace(" ", "").upper() if match else None
 
 
+def _markdown_section(text: str, heading: str) -> str:
+    # EXA occasionally concatenates the first Google heading with the preceding PDF link.
+    headings = list(
+        re.finditer(r"(?m)(?<!#)#{1,2}\s+([^#\n]+?)\s*(?=\n|$)", text)
+    )
+    for index, match in enumerate(headings):
+        title = match.group(1).strip()
+        if title == heading or title.startswith(heading + " ("):
+            start = match.end()
+            end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+            return text[start:end].strip()
+    return ""
+
+
+def _section_spans(section: str, kind: str) -> list[dict[str, Any]]:
+    if not section:
+        return []
+    if kind == "claims":
+        claim_starts = list(re.finditer(r"(?m)^\s*(\d+)\.\s+", section))
+        parts = [
+            section[
+                match.start() : claim_starts[index + 1].start()
+                if index + 1 < len(claim_starts)
+                else len(section)
+            ]
+            for index, match in enumerate(claim_starts)
+        ] or [section]
+    else:
+        parts = re.split(r"\n\s*\n", section)
+    spans = []
+    cursor = 0
+    for index, raw in enumerate(parts, start=1):
+        part = raw.strip()
+        if not part:
+            continue
+        start = section.find(part, cursor)
+        if start < 0:
+            continue
+        end = start + len(part)
+        cursor = end
+        if kind == "claims":
+            number = re.match(r"(\d+)\.", part)
+            label = f"claim {number.group(1)}" if number else f"claim {index}"
+        elif kind == "abstract":
+            label = "abstract"
+        else:
+            label = f"paragraph {index}"
+        spans.append({"label": label, "start": start, "end": end, "text": part})
+    return spans
+
+
+def parse_exa_patent_markdown(
+    text: str, *, provider: str, publication_number: str, url: str, language: str
+) -> FetchedDocument:
+    """Convert Google Patents markdown returned by EXA into auditable sections."""
+    publication = publication_number.replace(" ", "").upper()
+    abstract = _markdown_section(text, "Abstract")
+    claims = _markdown_section(text, "Claims")
+    description = _markdown_section(text, "Description")
+    info = _markdown_section(text, "Info")
+
+    def date_after(label: str) -> str | None:
+        match = re.search(
+            rf"{re.escape(label)}.{{0,700}}?(\d{{4}}-\d{{2}}-\d{{2}})",
+            info,
+            re.S,
+        )
+        return match.group(1) if match else None
+
+    title = ""
+    for line in text.splitlines():
+        if line.startswith("# ") and publication in line.replace(" ", "").upper():
+            title = line[2:].strip()
+            title = re.sub(r"\s*-\s*Google Patents\s*$", "", title)
+            title = re.sub(rf"^{re.escape(publication)}\s*-\s*", "", title, flags=re.I)
+            break
+    application_match = re.search(
+        r"Application number\s*([A-Z]{2}[A-Z0-9./,]+?)\s*(?=Prior art date|Other languages|Other versions|Inventor|Current Assignee|Original Assignee|Priority date|Filing date|Publication date)",
+        info,
+        re.I,
+    )
+    assignee_match = re.search(
+        r"Current Assignee.*?\)\s*(.+?)\s*Original Assignee", info, re.S
+    )
+    structured = bool(abstract or claims or description)
+    if not structured:
+        description = text
+    return FetchedDocument(
+        provider=provider,
+        publication_number=publication,
+        application_number=application_match.group(1) if application_match else None,
+        title=title,
+        assignee=" ".join(assignee_match.group(1).split()) if assignee_match else None,
+        priority_date=date_after("Priority date") or date_after("Prior art date"),
+        filing_date=date_after("Filing date"),
+        publication_date=date_after("Publication date"),
+        language=language,
+        url=url,
+        abstract_text=abstract,
+        claims_text=claims,
+        description_text=description,
+        section_spans={
+            "abstract": _section_spans(abstract, "abstract"),
+            "claims": _section_spans(claims, "claims"),
+            "description": _section_spans(description, "description")
+            if structured
+            else [
+                {"label": "exa fetched content", "start": 0, "end": len(text), "text": text}
+            ],
+        },
+        raw_metadata={"source": "exa_mcp", "structured_sections": structured},
+    )
+
+
 class ExaMcpProvider(SearchProvider):
     name = "exa_mcp"
 
@@ -262,25 +376,22 @@ class ExaMcpProvider(SearchProvider):
         if not publication:
             raise ValueError("EXA fetch requires a patent publication number")
         url = request.url or f"https://patents.google.com/patent/{publication}/{request.language}"
-        result = await self._call(self.settings.fetch_tool, {"url": url})
+        result = await self._call(
+            self.settings.fetch_tool,
+            {"urls": [url], "maxCharacters": self.settings.fetch_max_characters},
+        )
         text = _content_text(result)
         if not text:
             records = _exa_results(result)
             text = "\n\n".join(str(item.get("text") or "") for item in records).strip()
         if not text:
             raise ValueError("EXA fetch returned no text content")
-        return FetchedDocument(
+        return parse_exa_patent_markdown(
+            text,
             provider=self.name,
             publication_number=publication,
-            language=request.language,
             url=url,
-            description_text=text,
-            section_spans={
-                "description": [
-                    {"label": "exa fetched content", "start": 0, "end": len(text), "text": text}
-                ]
-            },
-            raw_metadata={"source": "exa_mcp", "structured_sections": False},
+            language=request.language,
         )
 
     async def _call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:

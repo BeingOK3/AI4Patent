@@ -4,9 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-8001}"
 VENV="$ROOT/backend/.venv"
-ENGINE="$ROOT/bin/opencode/opencode"
 
-if [[ ! -x "$VENV/bin/python" || ! -x "$ENGINE" ]]; then
+if [[ ! -x "$VENV/bin/python" ]]; then
     echo "环境未就绪，请先运行：./install.sh" >&2
     exit 1
 fi

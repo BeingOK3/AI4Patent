@@ -93,3 +93,17 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_provider_contract backend.tests.test_health backend.tests.test_cache backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，38 项全部通过；新增 8 项覆盖真实命中、空结果、超时、异常、Provider/排名契约、超量结果、全文抓取和显式禁用；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-PROVIDER-001] define audited search contracts`
 - 已知限制：具体 HTTP/MCP 调用将在 `IDEA-GPAT-001`、`IDEA-GPAT-002` 和 `IDEA-EXA-001` 接入本契约。
+
+## 2026-07-16 — IDEA-GPAT-001
+
+- 类型：本地 Google Patents 搜索 Provider
+- 目标：不经 EXA MCP，在本地构造 Google Patents 查询、解析分页搜索结果并返回统一 Provider 命中，以消除单一远程 MCP 依赖。
+- 实现：新增 Google Patents 查询 URL 编码、分页/数量/国家参数、可容错 HTML Parser、公开号链接回退提取、请求限速、指数重试、环境代理失败后直连降级和 FIFO 响应缓存。
+- 配置变更：统一配置和 Schema 新增 `trust_environment_proxy` 与 `fallback_to_direct`；依赖声明更改为 `httpx[socks]`，使有效 SOCKS 环境可直接使用，未安装 SOCKS 支持时仍能回退直连。
+- 首轮测试：1 项失败；公开号同时从链接和页面字段提取后被拼接两次。
+- 修正：页面显式结构化字段覆盖链接推导值，链接只在页面字段缺失时回退。
+- 离线测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_google_patents_search ... -v`，43 项全部通过；新增 5 项覆盖真实结构 fixture、URL/分页、数量上限、响应缓存和断网错误；配置/Schema JSON 与 `git diff --check` 通过。
+- 在线冒烟测试：实际调用返回 `ERROR / ConnectTimeout / 0 hits`；当前机器的 SOCKS 环境代理端口拒绝连接，回退直连也在 5 秒内超时。系统正确保留故障而未伪报成功。
+- 涉及文件：`config/ai4patent.json`、`config/ai4patent.schema.json`、`backend/requirements.txt`、`backend/idea/config.py`、`backend/idea/providers/google_patents.py`、`backend/idea/providers/__init__.py`、`backend/tests/fixtures/google_patents_search.html`、`backend/tests/test_google_patents_search.py`、`docs/development-log.md`。
+- 提交主题：`feat(idea): [IDEA-GPAT-001] add local Google Patents search`
+- 已知限制：当前部署环境需要可用的外网直连或代理才能获得实时 Google 命中；断网时使用已缓存响应或后续 EXA Provider。

@@ -93,6 +93,8 @@ class GooglePatentsSettings(ProviderSettings):
     base_url: HttpUrl
     min_request_interval_seconds: float = Field(ge=0)
     user_agent: str = Field(min_length=1)
+    trust_environment_proxy: bool
+    fallback_to_direct: bool
 
 
 class LocalCacheProviderSettings(StrictModel):

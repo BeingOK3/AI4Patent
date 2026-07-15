@@ -163,14 +163,16 @@
         "google_patents_local": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "timeout_seconds", "max_attempts", "base_url", "min_request_interval_seconds", "user_agent"],
+          "required": ["enabled", "timeout_seconds", "max_attempts", "base_url", "min_request_interval_seconds", "user_agent", "trust_environment_proxy", "fallback_to_direct"],
           "properties": {
             "enabled": {"type": "boolean"},
             "timeout_seconds": {"type": "integer", "minimum": 1},
             "max_attempts": {"type": "integer", "minimum": 1},
             "base_url": {"type": "string", "format": "uri"},
             "min_request_interval_seconds": {"type": "number", "minimum": 0},
-            "user_agent": {"type": "string", "minLength": 1}
+            "user_agent": {"type": "string", "minLength": 1},
+            "trust_environment_proxy": {"type": "boolean"},
+            "fallback_to_direct": {"type": "boolean"}
           }
         },
         "local_cache": {"$ref": "#/$defs/providerBase"}

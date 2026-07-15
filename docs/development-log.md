@@ -69,3 +69,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_cache backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，25 项全部通过；新增 7 项覆盖 FIFO 顺序、读取不续期、租约、超大对象、key 冲突、孤儿修复和路径防护；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-CACHE-001] enforce FIFO cache capacity`
 - 已知限制：生产配置的 1 GiB/0.9 GiB 阈值由已验证的统一配置注入；本单元测试用 10/6 字节缩小阈值验证边界。
+
+## 2026-07-16 — IDEA-HEALTH-001
+
+- 类型：Harness 启动接线与健康检查
+- 目标：将统一配置、业务库和 FIFO 缓存接入 FastAPI 实际启动路径，并分组件报告系统是正常、降级还是核心错误。
+- 实现：FastAPI 导入时严格加载配置、迁移 SQLite、初始化并修复缓存；新增 `/api/system/health`、`/api/system/config`、`/api/system/cache` 和手动缓存清理接口；原 `/api/health` 保留兼容并返回聚合状态。
+- 健康维度：FastAPI、配置源、SQLite 读写、OpenCode 可执行文件、模型认证是否存在、EXA MCP 配置、本地 Google Patents 网络探测、缓存容量/可写性和 Workflow 恢复器。
+- 降级语义：EXA 或 Google Patents 单路失败时仍允许核心系统工作并标记 `degraded`；模型认证、数据库、缓存或执行引擎失效时标记 `error`；响应永不返回 API Key。
+- 涉及文件：`.gitignore`、`backend/idea/health.py`、`backend/main.py`、`backend/tests/test_health.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_health backend.tests.test_cache backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，30 项全部通过；通过 `main` 实际导入和缓存接口冒烟测试；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-HEALTH-001] expose component health and cache status`
+- 已知限制：Workflow 恢复器在 `IDEA-WF-001` 前明确报告 `pending`；EXA 本单元只校验配置存在，真实调用状态由 Provider 工具调用审计记录。

@@ -8,6 +8,10 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from idea.cache import CacheStore
+from idea.config import load_config
+from idea.database import Database
+from idea.health import HealthService
 from opencode_client import run_task, kill_current, kill_task
 
 BASE = Path(__file__).resolve().parent.parent
@@ -35,6 +39,19 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 app = FastAPI(title="AI4P 专利工作台")
 
+APP_CONFIG = load_config()
+IDEA_DB = Database(APP_CONFIG.storage.database)
+IDEA_DB.initialize()
+IDEA_CACHE = CacheStore(
+    APP_CONFIG.storage.cache_dir,
+    IDEA_DB,
+    max_bytes=APP_CONFIG.storage.cache.max_bytes,
+    low_watermark_bytes=APP_CONFIG.storage.cache.low_watermark_bytes,
+    cleanup_after_write=APP_CONFIG.storage.cache.cleanup_after_write,
+)
+IDEA_CACHE.repair()
+HEALTH_SERVICE = HealthService(APP_CONFIG, IDEA_DB, IDEA_CACHE)
+
 
 def sse(d):
     return f"data: {json.dumps(d, ensure_ascii=False)}\n\n"
@@ -47,7 +64,33 @@ def _safe_name(name: str) -> str:
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True, "engine": "opencode run"}
+    result = await HEALTH_SERVICE.check()
+    return {"ok": result["ok"], "status": result["status"], "engine": "opencode run"}
+
+
+@app.get("/api/system/health")
+async def system_health():
+    return await HEALTH_SERVICE.check()
+
+
+@app.get("/api/system/config")
+async def system_config():
+    return APP_CONFIG.snapshot()
+
+
+@app.get("/api/system/cache")
+async def system_cache():
+    return {
+        **IDEA_CACHE.stats(),
+        "max_bytes": IDEA_CACHE.max_bytes,
+        "low_watermark_bytes": IDEA_CACHE.low_watermark_bytes,
+        "eviction_policy": "fifo",
+    }
+
+
+@app.post("/api/system/cache/cleanup")
+async def system_cache_cleanup():
+    return IDEA_CACHE.cleanup(force=True).__dict__
 
 
 # ===== 配置管理（一键傻瓜式） =====

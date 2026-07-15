@@ -132,3 +132,15 @@
 - 涉及文件：`config/ai4patent.json`、`config/ai4patent.schema.json`、`backend/idea/config.py`、`backend/idea/providers/exa.py`、`backend/idea/providers/__init__.py`、`backend/tests/test_exa_provider.py`、`docs/development-log.md`。
 - 提交主题：`feat(idea): [IDEA-EXA-001] add audited EXA MCP provider`
 - 已知限制：EXA 抓取返回的非结构化文本只能作为降级全文，章节精确度低于本地 Google HTML Parser，报告必须标注 `structured_sections=false`。
+
+## 2026-07-16 — IDEA-MERGE-001
+
+- 类型：双路检索合并、去重与溯源
+- 目标：将 EXA 与本地 Google Patents 的命中确定性合并，减少同一文献/同族重复深读，同时不因模糊相似度误删独立文献。
+- 实现：新增公开号、申请号和同族号规范化；使用并查集按多标识传递合并；输出标准化 `MergedHit`、所有来源、Provider 排名、查询 ID、URL 及原始命中数据。
+- 去重优先级：标准化公开号→标准化申请号→已知同族 ID→URL；标题+优先权日+申请人相似只生成 `possible_family_keys`，不自动合并。
+- 字段融合：标题/摘要选择信息更完整的值；公开号、申请号和同族保留标准化标识；不覆盖任何原始 Provider 记录。
+- 涉及文件：`backend/idea/merge.py`、`backend/tests/test_merge.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_merge ... -v`，61 项全部通过；新增 6 项覆盖编号规范化、双 Provider 同公开号、A1/B2 同申请、跨国已知同族、模糊同族不误合并和多查询溯源；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-MERGE-001] merge and deduplicate provider hits`
+- 已知限制：没有 Provider 明确同族 ID 时，模糊同族只标记待确认；不为节省分析量而强行合并。

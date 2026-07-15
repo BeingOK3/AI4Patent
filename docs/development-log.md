@@ -266,3 +266,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，111 项全部通过；新增 4 项覆盖最小冻结上下文和持久化、未知 basis、占位替代路径、维度缺少依据；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-VALUE-001] assess value from frozen conclusions`
 - 已知限制：没有外部市场数据源时，`technical_market_value` 仅代表基于用户方案和专利分析的初步判断，正式商业决策仍需另行尽调。
+
+## 2026-07-16 — IDEA-AUDIT-001
+
+- 类型：确定性证据审计与受限语义审计
+- 目标：阻止模型仅声称“已核验”却未实际检查，并确保只有可复验的程序错误可以成为阻断 Workflow 完成的 critical。
+- 确定性审计：检查深读数量、评估日/公开日、每篇 F1–Fn 完整性、披露映射是否有证据、evidence 的 Run/文献归属与 SHA-256、数据库映射与新颖性矩阵逐项一致、内存与持久化的新颖性/创造性/价值结果一致。
+- 语义审计：Evidence Auditor 只读取冻结结果和去重后的原文引文 inventory；必须精确回传全部 evidence ID 和公开号，少一项、重复项或自创 ID 均拒绝整步持久化。
+- 失控隔离：程序发现的日期/哈希/一致性问题可写入 `critical` 并阻止完成；模型报告的 `critical` 降为带原始级别记录的 `warning`，可提示人工复核但不能凭模型主观判断让系统失控。
+- 涉及文件：`backend/idea/audit.py`、`backend/tests/test_audit.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，115 项全部通过；新增 4 项覆盖完整 inventory 证明、干净审计、哈希篡改程序阻断且不调用模型、模型 critical 降级；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-AUDIT-001] enforce deterministic evidence audits`
+- 已知限制：语义审计仍是模型意见，不替代专利代理师复核；因此它只产生 advisory finding，最终硬门禁基于日期、归属、哈希和矩阵一致性。

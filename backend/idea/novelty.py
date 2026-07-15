@@ -34,7 +34,12 @@ class NoveltyService:
         self.database = database
         self.minimum_deep_reviews = minimum_deep_reviews
 
-    def determine(self, run_id: str) -> NoveltyResult:
+    def determine(
+        self, run_id: str, *, minimum_deep_reviews: int | None = None
+    ) -> NoveltyResult:
+        minimum = minimum_deep_reviews or self.minimum_deep_reviews
+        if minimum < 1:
+            raise ValueError("minimum_deep_reviews must be positive")
         run, feature_rows, document_rows = self._load_inputs(run_id)
         if not feature_rows:
             raise NoveltyGateError("novelty requires at least one persisted idea feature")
@@ -56,9 +61,9 @@ class NoveltyService:
         closest = ranked[0]
         destroying = [item for item in ranked if item.matrix.destroys_novelty]
         limitations: list[str] = []
-        if len(matrices) < self.minimum_deep_reviews:
+        if len(matrices) < minimum:
             limitations.append(
-                f"仅完成 {len(matrices)} 篇有效深读，低于配置下限 {self.minimum_deep_reviews} 篇。"
+                f"仅完成 {len(matrices)} 篇有效深读，低于配置下限 {minimum} 篇。"
             )
 
         if destroying:
@@ -81,7 +86,7 @@ class NoveltyService:
                 any(mapping.status == "NOT_DISCLOSED" for mapping in item.matrix.mappings)
                 for item in matrices
             )
-            enough_reviews = len(matrices) >= self.minimum_deep_reviews
+            enough_reviews = len(matrices) >= minimum
             if every_document_has_definite_gap and enough_reviews:
                 conclusion = "NOVEL"
                 rationale = (

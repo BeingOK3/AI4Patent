@@ -315,3 +315,16 @@
 - 测试：定向 19 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，125 项全部通过；新增 5 个执行器场景覆盖固定图、单步重试、崩溃窗口检查点、critical 审计、Manifest 篡改，另覆盖可选特征；`compileall` 与 `git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-WF-002] execute the fixed review workflow`
 - 已知限制：本单元提供执行器本体；后台 Task 管理、SSE/API 和启动时自动重新调度在后续 API Work Unit 接入。
+
+## 2026-07-16 — IDEA-API-001
+
+- 类型：生产 Runtime、后台任务管理与 IDEA API
+- 目标：让前端和后续 Skill 只调用受控 Workflow API，不再把完整流程交给 OpenCode 对话自行执行。
+- Runtime：统一装配 SQLite、1 GiB FIFO Cache、Run Store、Harness、DeepSeek 结构化客户端、本地 Google Patents、EXA MCP、7 类 Agent Service 和 11 步 Executor；启动时恢复中断 attempt 并重新调度 QUEUED/RUNNING Run。
+- API：实现 Case 新建/列表/详情，Run 新建/详情/SSE/取消/重跑，报告 JSON/Markdown、产物列表，以及 Run/Case 手动删除；重跑创建带 parent_run_id 的新不可变历史，不覆盖旧结果。
+- 输入与设置门禁：IDEA 长度、评估日、仅 full scope、quick/standard/deep、候选上限和深读上下限均由严格 Schema 校验；自定义组合与模式默认值不一致时在创建 Run 前 422；附件名限制在配置的 uploads 目录且防路径穿越。
+- 状态与完整性：后台同一 Run 去重启动；取消进入持久 CANCELLED；SSE 只轮询持久 Harness 状态并在终态结束；报告 API 返回前复验 Manifest；用户配置的深读下限同时传给抓取 limitation 和新颖性肯定结论门禁。
+- 涉及文件：`backend/idea/runtime.py`、`backend/idea/api.py`、`backend/main.py`、`backend/idea/execution.py`、`backend/idea/retrieval.py`、`backend/idea/novelty.py`、`backend/tests/test_api.py`、`backend/tests/test_execution.py`、`docs/development-log.md`。
+- 测试：API/Task 定向 8 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，133 项全部通过；主应用导入/OpenAPI/双 Provider 装配冒烟通过；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-API-001] expose durable workflow APIs`
+- 已知限制：当前附件沿用内部上传目录；MVP 前端先提供纯文本 IDEA 和检索参数，附件选择可在后续 UI 迭代显式展示。

@@ -95,7 +95,7 @@ class FakeDocuments:
 
 
 class FakeNovelty:
-    def determine(self, run_id):
+    def determine(self, run_id, **kwargs):
         return novelty_result()
 
 

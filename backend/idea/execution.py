@@ -183,7 +183,11 @@ class WorkflowExecutor:
             if attempt > 1:
                 self._clear_fetch_attempt(run_id)
             retrieval = self._retrieval(run_id)
-            output = await self.retrieval.fetch_selected(run_id=run_id, retrieval=retrieval)
+            output = await self.retrieval.fetch_selected(
+                run_id=run_id,
+                retrieval=retrieval,
+                minimum_documents=self._budget(run_id, self._idea(run_id)).deep_review_min,
+            )
             value = {
                 "publication_numbers": [item.publication_number for item in output.documents],
                 "document_ids": output.document_ids,
@@ -222,7 +226,10 @@ class WorkflowExecutor:
             if checkpoint:
                 return checkpoint
             existing = self._load_novelty_from_database(run_id)
-            output = existing or self.novelty.determine(run_id)
+            output = existing or self.novelty.determine(
+                run_id,
+                minimum_deep_reviews=self._budget(run_id, self._idea(run_id)).deep_review_min,
+            )
             return self._save_checkpoint(run_id, step, output.model_dump(mode="json"))
         if step == WorkflowStep.ANALYZE_INVENTIVENESS:
             checkpoint = self._checkpoint(run_id, step)

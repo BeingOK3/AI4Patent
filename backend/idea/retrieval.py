@@ -202,6 +202,7 @@ class RetrievalService:
         run_id: str,
         retrieval: RetrievalResult,
         language: str = "en",
+        minimum_documents: int = 10,
     ) -> FetchResult:
         by_publication = {
             hit.publication_number: hit
@@ -236,11 +237,11 @@ class RetrievalService:
             document_id = self._persist_document(run_id, document, by_publication[publication])
             documents.append(document)
             document_ids[publication] = document_id
-        if len(documents) < 10:
+        if len(documents) < minimum_documents:
             limitations.append(
                 {
                     "code": "DEEP_REVIEW_FETCHED_BELOW_MINIMUM",
-                    "required": 10,
+                    "required": minimum_documents,
                     "fetched": len(documents),
                 }
             )

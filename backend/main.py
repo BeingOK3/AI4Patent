@@ -8,12 +8,10 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from idea.cache import CacheStore
+from idea.api import RunTaskManager, create_idea_router
 from idea.config import load_config
-from idea.database import Database
 from idea.health import HealthService
-from idea.run_store import RunStore
-from idea.workflow import WorkflowHarness
+from idea.runtime import build_runtime
 from opencode_client import run_task, kill_current, kill_task
 
 BASE = Path(__file__).resolve().parent.parent
@@ -42,29 +40,29 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 app = FastAPI(title="AI4P 专利工作台")
 
 APP_CONFIG = load_config()
-IDEA_DB = Database(APP_CONFIG.storage.database)
-IDEA_DB.initialize()
-IDEA_CACHE = CacheStore(
-    APP_CONFIG.storage.cache_dir,
-    IDEA_DB,
-    max_bytes=APP_CONFIG.storage.cache.max_bytes,
-    low_watermark_bytes=APP_CONFIG.storage.cache.low_watermark_bytes,
-    cleanup_after_write=APP_CONFIG.storage.cache.cleanup_after_write,
-)
-IDEA_CACHE.repair()
-IDEA_RUN_STORE = RunStore(APP_CONFIG.storage.runs_dir)
-IDEA_WORKFLOW = WorkflowHarness(
-    IDEA_DB,
-    IDEA_RUN_STORE,
-    max_step_attempts=APP_CONFIG.workflow.max_step_attempts,
-)
-IDEA_WORKFLOW.recover_incomplete()
+IDEA_RUNTIME = build_runtime(APP_CONFIG)
+IDEA_DB = IDEA_RUNTIME.database
+IDEA_CACHE = IDEA_RUNTIME.cache
+IDEA_RUN_STORE = IDEA_RUNTIME.run_store
+IDEA_WORKFLOW = IDEA_RUNTIME.harness
+IDEA_TASKS = RunTaskManager(IDEA_DB, IDEA_WORKFLOW, IDEA_RUNTIME.executor)
 HEALTH_SERVICE = HealthService(
     APP_CONFIG,
     IDEA_DB,
     IDEA_CACHE,
     workflow_recovery_ready=lambda: IDEA_WORKFLOW.recovery_ready,
 )
+app.include_router(
+    create_idea_router(APP_CONFIG, IDEA_DB, IDEA_RUN_STORE, IDEA_WORKFLOW, IDEA_TASKS)
+)
+
+
+@app.on_event("startup")
+async def resume_idea_runs():
+    if APP_CONFIG.workflow.resume_incomplete_runs_on_startup:
+        resumed = IDEA_TASKS.resume_incomplete()
+        if resumed:
+            logger.info("恢复 IDEA Runs: %s", resumed)
 
 
 def sse(d):
@@ -79,7 +77,7 @@ def _safe_name(name: str) -> str:
 @app.get("/api/health")
 async def health():
     result = await HEALTH_SERVICE.check()
-    return {"ok": result["ok"], "status": result["status"], "engine": "opencode run"}
+    return {"ok": result["ok"], "status": result["status"], "engine": "idea-workflow/2.0.0"}
 
 
 @app.get("/api/system/health")

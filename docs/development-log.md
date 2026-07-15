@@ -193,3 +193,15 @@
 - 涉及文件：`config/ai4patent.json`、`config/ai4patent.schema.json`、`backend/idea/config.py`、`backend/idea/model_client.py`、`backend/tests/test_model_client.py`、`docs/development-log.md`。
 - 提交主题：`feat(idea): [IDEA-MODEL-001] add structured DeepSeek client`
 - 已知限制：结构重试会产生额外 token 费用；工作流需通过最小上下文和文献级并发控制费用。
+
+## 2026-07-16 — IDEA-PARSE-001
+
+- 类型：IDEA Parser 与 Query Planner Agent 接入
+- 目标：将 IDEA 解析和检索规划变成可审计、可持久且可二次校验的受限 Agent 步骤，不允许模型一步跳到检索结论。
+- 实现：新增精简 Parser/Planner 系统提示、Agent Service、F1–Fn 持久化、Q1–Qn 持久化、Run 内全局唯一内部 ID 和模型调用审计记录。
+- 二次门禁：所有 `explicit` 特征的 `start/end/text` 必须与用户输入逐字一致；越界或不匹配立即失败；检索式中出现括号占位符、`TODO/TBD` 等标记时拒绝持久化。
+- 日志隐私：`tool_calls.request_json` 只记录 Agent 名和输入字符数，不记录完整 IDEA；响应摘要只记录 attempt、usage 和 response ID。
+- 涉及文件：`backend/idea/agents.py`、`backend/tests/test_agents.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_agents ... -v`，89 项全部通过；新增 4 项覆盖特征持久化/脱敏审计、span 不匹配、Run 内查询 ID 和占位检索式；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-PARSE-001] persist validated idea and query plans`
+- 已知限制：语义正确性仍由固定 Eval 案例衡量；本单元保证的是来源可追溯、结构合法且不能越过检索步骤。

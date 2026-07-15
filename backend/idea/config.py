@@ -43,6 +43,7 @@ class ModelSettings(StrictModel):
     auth_file: Path
     auth_provider: str = Field(min_length=1)
     timeout_seconds: int = Field(ge=1)
+    max_output_tokens: int = Field(ge=256)
     structured_output_retries: int = Field(ge=0, le=10)
     temperature: float = Field(ge=0, le=2)
 

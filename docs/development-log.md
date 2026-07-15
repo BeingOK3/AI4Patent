@@ -180,3 +180,16 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_agent_schemas ... -v`，80 项全部通过；新增 6 项覆盖披露证据、特征唯一、单篇新颖性、直接“具备新颖性”、创造性 D2 证据和 Agent 注册；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-SCHEMA-001] validate agent evidence outputs`
 - 已知限制：Schema 保证结构和逻辑下限；evidence ID 是否真实存在、是否指向原文将由后续 Evidence Auditor 与数据库校验。
+
+## 2026-07-16 — IDEA-MODEL-001
+
+- 类型：DeepSeek 受控结构化模型客户端
+- 目标：不借助通用对话 Agent 的自由流程，直接对每个受限 Agent 发送最小上下文与对应 JSON Schema，并且只返回经 Pydantic 校验的结果。
+- 实现：新增 OpenAI-compatible `/chat/completions` 客户端、`json_object` 响应约束、Agent Schema 注入、JSON/固定 Markdown fence 解析、结构错误反馈重试、token/attempt/耗时元数据和环境代理失败后直连。
+- 密钥处理：优先从 `DEEPSEEK_API_KEY` 读取，否则从被 Git 忽略的本地 auth 文件读取；返回值、错误、配置快照和开发日志不包含密钥。
+- 统一配置：新增 `max_output_tokens=8192`；已通过真实 `/models` 接口验证当前账号提供 `deepseek-v4-flash` 和 `deepseek-v4-pro`，本系统按用户指定使用前者。
+- 离线测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_model_client ... -v`，85 项全部通过；新增 5 项覆盖一次成功、无效 JSON 重试、Schema 耗尽且不泄密、fence 容错和缺失认证；配置/Schema JSON 与 `git diff --check` 通过。
+- 在线冒烟测试：用真实 `deepseek-v4-flash` 对一段 KV Cache 方案执行 `patent-idea-parser`，第 1 次通过 Schema，返回 4 个特征，用量 682 prompt + 3957 completion = 4639 tokens；未记录模型输出全文。
+- 涉及文件：`config/ai4patent.json`、`config/ai4patent.schema.json`、`backend/idea/config.py`、`backend/idea/model_client.py`、`backend/tests/test_model_client.py`、`docs/development-log.md`。
+- 提交主题：`feat(idea): [IDEA-MODEL-001] add structured DeepSeek client`
+- 已知限制：结构重试会产生额外 token 费用；工作流需通过最小上下文和文献级并发控制费用。

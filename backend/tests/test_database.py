@@ -38,12 +38,25 @@ class DatabaseTests(unittest.TestCase):
             "search_queries", "search_hits", "patent_documents", "patent_families",
             "run_documents", "idea_features", "evidence", "feature_mappings",
             "novelty_results", "inventive_routes", "value_results", "audit_results",
-            "reports", "artifacts", "cache_entries", "deletion_events",
+            "reports", "artifacts", "cache_entries", "deletion_events", "stage_results",
         }
         self.assertTrue(expected.issubset(self.db.table_names()))
         with self.db.connect() as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 1)
+        self.assertEqual(version, 2)
+
+    def test_stage_results_are_hashed_write_once_checkpoints(self) -> None:
+        case = self.db.create_case("checkpoint")
+        run = self.create_run(case["case_id"])
+        first = self.db.put_stage_result(run["run_id"], "PARSE_IDEA", {"features": ["F1"]})
+        second = self.db.put_stage_result(run["run_id"], "PARSE_IDEA", {"features": ["F1"]})
+        self.assertEqual(first["content_hash"], second["content_hash"])
+        self.assertEqual(
+            self.db.get_stage_result(run["run_id"], "PARSE_IDEA")["value"],
+            {"features": ["F1"]},
+        )
+        with self.assertRaisesRegex(ValueError, "immutable"):
+            self.db.put_stage_result(run["run_id"], "PARSE_IDEA", {"features": ["F2"]})
 
     def test_rerun_creates_new_immutable_history(self) -> None:
         case = self.db.create_case("KV Cache 调度")

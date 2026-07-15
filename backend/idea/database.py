@@ -76,6 +76,15 @@ CREATE TABLE IF NOT EXISTS run_steps (
 );
 CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps(run_id, step_id);
 
+CREATE TABLE IF NOT EXISTS stage_results (
+    run_id TEXT NOT NULL REFERENCES idea_runs(run_id) ON DELETE CASCADE,
+    stage_name TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(run_id, stage_name)
+);
+
 CREATE TABLE IF NOT EXISTS tool_calls (
     call_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES idea_runs(run_id) ON DELETE CASCADE,
@@ -317,7 +326,7 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
-            connection.execute("PRAGMA user_version = 1")
+            connection.execute("PRAGMA user_version = 2")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -462,6 +471,41 @@ class Database:
         for field in ("config_snapshot", "limitation_json", "attachments_json", "settings_json"):
             result[field] = json.loads(result[field])
         return result
+
+    def put_stage_result(self, run_id: str, stage_name: str, value: Any) -> dict[str, Any]:
+        encoded = canonical_json(value)
+        content_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        with self.connect() as connection:
+            existing = connection.execute(
+                "SELECT result_json,content_hash FROM stage_results WHERE run_id = ? AND stage_name = ?",
+                (run_id, stage_name),
+            ).fetchone()
+            if existing:
+                if existing["content_hash"] != content_hash or existing["result_json"] != encoded:
+                    raise ValueError(f"stage result is immutable: {stage_name}")
+            else:
+                connection.execute(
+                    "INSERT INTO stage_results VALUES(?,?,?,?,?)",
+                    (run_id, stage_name, encoded, content_hash, now_ms()),
+                )
+        return self.get_stage_result(run_id, stage_name)
+
+    def get_stage_result(self, run_id: str, stage_name: str) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT result_json,content_hash,created_at FROM stage_results WHERE run_id = ? AND stage_name = ?",
+                (run_id, stage_name),
+            ).fetchone()
+        if row is None:
+            return None
+        actual = hashlib.sha256(row["result_json"].encode("utf-8")).hexdigest()
+        if actual != row["content_hash"]:
+            raise ValueError(f"stage result hash mismatch: {stage_name}")
+        return {
+            "value": json.loads(row["result_json"]),
+            "content_hash": row["content_hash"],
+            "created_at": row["created_at"],
+        }
 
     def list_runs(self, case_id: str) -> list[dict[str, Any]]:
         with self.connect() as connection:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -87,6 +88,9 @@ class IdeaAgentService:
                         ),
                     ),
                 )
+            self._persist_stage_result(
+                connection, run_id, "PARSE_IDEA", output.model_dump(mode="json")
+            )
         return output
 
     async def plan_queries(
@@ -133,6 +137,9 @@ class IdeaAgentService:
                         timestamp,
                     ),
                 )
+            self._persist_stage_result(
+                connection, run_id, "PLAN_QUERIES", output.model_dump(mode="json")
+            )
         return output
 
     async def call_agent(
@@ -222,3 +229,17 @@ class IdeaAgentService:
                 raise AgentExecutionError(f"feature span outside input: {feature.feature_id}")
             if idea_text[span.start : span.end] != span.text:
                 raise AgentExecutionError(f"feature span does not match input: {feature.feature_id}")
+
+    @staticmethod
+    def _persist_stage_result(connection, run_id: str, stage_name: str, value: dict) -> None:
+        encoded = canonical_json(value)
+        connection.execute(
+            "INSERT INTO stage_results VALUES(?,?,?,?,?)",
+            (
+                run_id,
+                stage_name,
+                encoded,
+                hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+                now_ms(),
+            ),
+        )

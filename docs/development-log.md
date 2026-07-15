@@ -290,3 +290,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，119 项全部通过；新增 4 项覆盖 14 节报告/Manifest/数据库哈希、直接矛盾标签、未知专利号、正确前缀后偷换结论；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-REPORT-001] generate authoritative audited reports`
 - 已知限制：模拟审查意见是基于已审计结构化事实的辅助文本，不是实际官方审查意见；权威数据以 `report.json` 为准。
+
+## 2026-07-16 — IDEA-CKPT-001
+
+- 类型：Workflow 写一次结构化检查点与设计补强
+- 目标：关闭“业务结果已经持久化、Harness 尚未写步骤成功，进程恰好退出”这一恢复窗口，避免恢复时重复调用模型或生成不一致结果。
+- 实现：数据库 schema 升级为 v2，新增 `stage_results(run_id, stage_name)`，保存 canonical JSON、SHA-256 和时间；同内容重复写幂等，不同内容覆盖被拒绝，读取时重新计算哈希。
+- 原子边界：Idea Parser 和 Query Planner 的完整输出检查点与 `idea_features/search_queries` 在同一个 SQLite 事务写入；恢复器可先复验检查点并重建强类型对象，无需加载 OpenCode 全上下文或再次请求模型。
+- 文档变更：在 Harness 核心规则中加入跨步骤结构化结果必须 write-once 检查点、可同事务时必须同事务的要求；属于正式执行器实现前发现的必要恢复约束。
+- 涉及文件：`backend/idea/database.py`、`backend/idea/agents.py`、`backend/tests/test_database.py`、`backend/tests/test_agents.py`、`docs/idea-rebuild-technical-design.md`、`docs/development-log.md`。
+- 测试：Parser/Planner/数据库定向 11 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，120 项全部通过；新增写一次/哈希/幂等和两个 Agent 同事务检查点断言；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-CKPT-001] add write-once stage checkpoints`
+- 已知限制：Provider 网络调用无法与 SQLite 事务原子提交；执行器会在缺少完成检查点时清理该步骤的临时调用/命中记录后按固定 request 重新执行，且不会把中间状态标记为成功。

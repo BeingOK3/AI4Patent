@@ -102,6 +102,8 @@ class IdeaAgentServiceTests(unittest.TestCase):
         self.assertEqual(feature["source_start"], 0)
         self.assertNotIn("缓存调度方法", call["request_json"])
         self.assertEqual(call["status"], "SUCCESS")
+        checkpoint = self.db.get_stage_result(self.run["run_id"], "PARSE_IDEA")
+        self.assertEqual(checkpoint["value"]["title"], result.title)
 
     def test_mismatched_source_span_is_rejected_before_persistence(self) -> None:
         service = IdeaAgentService(self.db, StubModel([parser_output(text="不匹配")]))
@@ -122,6 +124,8 @@ class IdeaAgentServiceTests(unittest.TestCase):
             [row["query_id"] for row in rows],
             [f"{self.run['run_id']}:Q1", f"{self.run['run_id']}:Q2"],
         )
+        checkpoint = self.db.get_stage_result(self.run["run_id"], "PLAN_QUERIES")
+        self.assertEqual(len(checkpoint["value"]["queries"]), 2)
 
     def test_query_placeholder_is_rejected(self) -> None:
         service = IdeaAgentService(

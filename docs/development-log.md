@@ -254,3 +254,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，107 项全部通过；新增 4 项覆盖多 D1 并发和原子持久化、伪造 evidence 拒绝、不新颖短路、仅部分披露 D2 不得得出不具创造性；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-INVENT-001] analyze bounded multi-D1 routes`
 - 已知限制：当前每个区别特征最多注入 5 个 D2 候选以控制 token；候选耗尽或组合动机证据不足时必须返回 `NEED_MORE_EVIDENCE/UNCERTAIN`，不会扩展为 Agent 自主搜索。
+
+## 2026-07-16 — IDEA-VALUE-001
+
+- 类型：冻结结论后的价值预评估
+- 目标：在不重新解释检索证据、不修改新颖性/创造性结论的前提下，评估可取证性、可规避性、技术/市场价值和申请策略。
+- 实现：Value Agent 仅接收 IDEA 特征/效果、冻结的新颖性摘要和创造性路线摘要；不注入全文或原始 evidence packet；输出 detectability、workaround difficulty、technical/market value、至少两条替代路径和申请建议并持久化。
+- 依据门禁：后端为输入分配 `IDEA:* / EFFECT:* / NOVELTY:CONCLUSION / INVENTIVE:*` basis ID；三个价值维度均必须引用至少一个已提供 basis ID，未知/自创 ID 或占位替代路径立即拒绝。
+- 数据边界：本步骤是专利价值预评估而非独立市场尽调；Prompt 明令不得搜索或编造市场事实，输出必须在 limitations 中反映不确定性。
+- 涉及文件：`backend/idea/value_analysis.py`、`backend/tests/test_value_analysis.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，111 项全部通过；新增 4 项覆盖最小冻结上下文和持久化、未知 basis、占位替代路径、维度缺少依据；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-VALUE-001] assess value from frozen conclusions`
+- 已知限制：没有外部市场数据源时，`technical_market_value` 仅代表基于用户方案和专利分析的初步判断，正式商业决策仍需另行尽调。

@@ -229,3 +229,16 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_document_analysis ... -v`，96 项全部通过；新增 3 项覆盖真实 span/evidence 持久化与全文释放、伪造 evidence ID 拒绝、必要特征映射缺失拒绝；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-DOC-001] analyze documents with evidence packets`
 - 已知限制：当前说明书片段排序使用可解释的词项覆盖率；复杂同义表达可能降分，但摘要和权利要求始终进入证据包，且后续 Eval 会衡量召回率。
+
+## 2026-07-16 — IDEA-NOVELTY-001
+
+- 类型：确定性新颖性矩阵与直接结论
+- 目标：从持久化的逐篇 F1–Fn 映射生成新颖性裁决，保证“同一篇文献覆盖全部必要特征”由程序执行，而不是由模型自行声称。
+- 实现：新增 Novelty Service，按每篇深读文献构造独立矩阵、计算最接近文献、识别所有各自独立的破坏性文献并选定主引用；明确支持输出 `NOVEL / 具备新颖性`，同时携带理由、置信度、缺失特征和局限性。
+- 完成门槛：无单篇破坏文献时，只有深读数量达到配置下限且每篇均存在明确 `NOT_DISCLOSED` 缺口，才能输出 `NOVEL`；不足 10 篇或只存在 `PARTIAL/UNCERTAIN` 缺口时输出 `UNCERTAIN`，不伪造肯定结论；已有单篇完整披露时即使数量不足仍可输出 `NOT_NOVEL`。
+- 审计门禁：重新核对 evidence ID 必须属于同一 Run/文献、quote 哈希一致、全部必要特征均有且仅有一个映射、文献公开日在评估日之前；任一失败即 fail closed。
+- Schema 修正：现实中可有多篇文献各自独立破坏新颖性，因此从“必须恰好一篇”调整为“至少一篇，且主引用必须来自破坏性矩阵”；仍严禁跨文献拼接。
+- 涉及文件：`backend/idea/agent_schemas.py`、`backend/idea/novelty.py`、`backend/tests/test_agent_schemas.py`、`backend/tests/test_novelty.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -v`，103 项全部通过；新增 7 项覆盖单篇原则、10 篇直接新颖结论、数量不足降级、多破坏文献、证据哈希篡改、评估日后文献和 Schema 多文献语义；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-NOVELTY-001] enforce single-document novelty decisions`
+- 已知限制：当前置信度由已验证映射确定性聚合，不代表检索空间的统计覆盖概率；报告必须同时展示检索范围、Provider 状态和停止原因。

@@ -153,9 +153,12 @@ class NoveltyResult(AgentModel):
     def conclusion_matches_matrices(self) -> "NoveltyResult":
         destroying = [matrix for matrix in self.matrices if matrix.destroys_novelty]
         if self.conclusion == "NOT_NOVEL":
-            if len(destroying) != 1:
-                raise ValueError("NOT_NOVEL requires exactly one identified destroying document")
-            if self.destroying_publication_number != destroying[0].publication_number:
+            if not destroying:
+                raise ValueError("NOT_NOVEL requires an identified destroying document")
+            destroying_publications = {
+                matrix.publication_number for matrix in destroying
+            }
+            if self.destroying_publication_number not in destroying_publications:
                 raise ValueError("destroying publication does not match matrix")
         elif self.conclusion == "NOVEL":
             if destroying or self.destroying_publication_number:

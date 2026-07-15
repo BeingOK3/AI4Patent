@@ -80,6 +80,26 @@ class AgentSchemaTests(unittest.TestCase):
         })
         self.assertEqual(valid.conclusion, "NOVEL")
 
+    def test_multiple_independently_destroying_documents_are_allowed(self) -> None:
+        matrices = [
+            {
+                "publication_number": publication,
+                "mappings": [mapping("F1", "DISCLOSED", [f"E-{publication}"])],
+                "destroys_novelty": True,
+            }
+            for publication in ("US1A1", "US2A1")
+        ]
+        valid = NoveltyResult.model_validate({
+            "conclusion": "NOT_NOVEL",
+            "confidence": 0.91,
+            "matrices": matrices,
+            "destroying_publication_number": "US2A1",
+            "closest_publication_number": "US1A1",
+            "missing_features": [],
+            "rationale": "either document independently destroys novelty",
+        })
+        self.assertEqual(valid.destroying_publication_number, "US2A1")
+
     def test_not_inventive_requires_d2_evidence_for_every_difference(self) -> None:
         value = {
             "route_id": "R1",

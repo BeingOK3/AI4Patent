@@ -81,3 +81,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_health backend.tests.test_cache backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，30 项全部通过；通过 `main` 实际导入和缓存接口冒烟测试；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-HEALTH-001] expose component health and cache status`
 - 已知限制：Workflow 恢复器在 `IDEA-WF-001` 前明确报告 `pending`；EXA 本单元只校验配置存在，真实调用状态由 Provider 工具调用审计记录。
+
+## 2026-07-16 — IDEA-PROVIDER-001
+
+- 类型：检索 Provider 契约与 Harness 调用门禁
+- 目标：为 EXA、本地 Google Patents 及后续缓存降级建立相同的严格输入/输出契约，防止未真实执行、超时或返回结构错误的调用被记为成功。
+- 实现：新增严格 `SearchQuery`、`FetchRequest`、`SearchHit`、`FetchedDocument`、`ProviderResult` 模型，抽象 `SearchProvider`，以及对搜索/抓取进行真实异步执行、超时和契约校验的 `ProviderRunner`。
+- 状态语义：`SUCCESS`、`EMPTY`、`TIMEOUT`、`ERROR`、`CONTRACT_ERROR`、`DISABLED` 相互独立；只有真实返回且通过契约的结果才是成功；空结果是“成功调用但无命中”，不伪造文献。
+- 契约校验：命中项必须是已验证模型、Provider 名必须匹配执行者、排名不得重复、结果不得超过请求上限、每项必须有公开号或可追溯 URL。
+- 涉及文件：`backend/idea/providers/__init__.py`、`backend/idea/providers/base.py`、`backend/tests/test_provider_contract.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_provider_contract backend.tests.test_health backend.tests.test_cache backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，38 项全部通过；新增 8 项覆盖真实命中、空结果、超时、异常、Provider/排名契约、超量结果、全文抓取和显式禁用；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-PROVIDER-001] define audited search contracts`
+- 已知限制：具体 HTTP/MCP 调用将在 `IDEA-GPAT-001`、`IDEA-GPAT-002` 和 `IDEA-EXA-001` 接入本契约。

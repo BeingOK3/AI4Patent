@@ -278,3 +278,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，115 项全部通过；新增 4 项覆盖完整 inventory 证明、干净审计、哈希篡改程序阻断且不调用模型、模型 critical 降级；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-AUDIT-001] enforce deterministic evidence audits`
 - 已知限制：语义审计仍是模型意见，不替代专利代理师复核；因此它只产生 advisory finding，最终硬门禁基于日期、归属、哈希和矩阵一致性。
+
+## 2026-07-16 — IDEA-REPORT-001
+
+- 类型：权威结构化报告、Markdown 和完整性 Manifest
+- 目标：让程序而非模型掌握最终专利号、日期、统计和结论，同时生成内部可读且可历史复验的完整输出。
+- 实现：Report Service 从数据库加载检索计划/调用/命中/Provider 状态/深读文献和特征映射，与冻结的新颖性、创造性、价值和审计对象组装 `report.json`；确定性渲染含 14 个固定章节的 `report.md`；Run Store 原子写入两份报告并最后写 `manifest.json`。
+- 叙述边界：Report Composer 只生成摘要、模拟审查意见和行动建议；新颖性中文标签由程序固定。叙述必须以固定标签开头，后文不得偷换为相反/不确定结论，不得引入未知专利公开号；失败时任何报告文件均不落盘。
+- 完整性：Manifest 记录输入快照、JSON 和 Markdown 的大小/SHA-256；`reports` 表保存实际路径和两份报告哈希；已有报告的 Run 禁止覆盖。
+- 涉及文件：`backend/idea/reporting.py`、`backend/tests/test_reporting.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，119 项全部通过；新增 4 项覆盖 14 节报告/Manifest/数据库哈希、直接矛盾标签、未知专利号、正确前缀后偷换结论；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-REPORT-001] generate authoritative audited reports`
+- 已知限制：模拟审查意见是基于已审计结构化事实的辅助文本，不是实际官方审查意见；权威数据以 `report.json` 为准。

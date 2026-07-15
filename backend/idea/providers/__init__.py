@@ -8,7 +8,7 @@ from .base import (
     SearchProvider,
     SearchQuery,
 )
-from .google_patents import GooglePatentsProvider, parse_search_html
+from .google_patents import GooglePatentsProvider, parse_patent_html, parse_search_html
 
 __all__ = [
     "FetchRequest",
@@ -20,5 +20,6 @@ __all__ = [
     "SearchProvider",
     "SearchQuery",
     "GooglePatentsProvider",
+    "parse_patent_html",
     "parse_search_html",
 ]

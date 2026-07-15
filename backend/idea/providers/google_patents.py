@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
+from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
 from html.parser import HTMLParser
 from urllib.parse import urlencode, urljoin, urlparse
@@ -21,6 +23,8 @@ def _classes(attrs: dict[str, str | None]) -> set[str]:
 
 
 class _GoogleSearchParser(HTMLParser):
+    VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+
     def __init__(self, base_url: str):
         super().__init__(convert_charrefs=True)
         self.base_url = base_url
@@ -38,7 +42,7 @@ class _GoogleSearchParser(HTMLParser):
         ):
             self.record = {}
             self.depth = 1
-        elif self.record is not None:
+        elif self.record is not None and tag not in self.VOID_TAGS:
             self.depth += 1
 
         if self.record is None:
@@ -119,6 +123,190 @@ def parse_search_html(content: str, base_url: str) -> list[dict[str, str]]:
     return parser.records
 
 
+@dataclass
+class _Capture:
+    kind: str
+    depth: int
+    parts: list[str] = field(default_factory=list)
+
+
+class _GooglePatentParser(HTMLParser):
+    VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+    SCALAR_PROPS = {
+        "publicationNumber": "publication_number",
+        "applicationNumber": "application_number",
+        "title": "title",
+        "assigneeOriginal": "assignee",
+        "priorityDate": "priority_date",
+        "filingDate": "filing_date",
+        "publicationDate": "publication_date",
+        "grantDate": "grant_date",
+    }
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.depth = 0
+        self.captures: list[_Capture] = []
+        self.values: dict[str, str] = {}
+        self.inventors: list[str] = []
+        self.claims: list[str] = []
+        self.description_lines: list[str] = []
+        self.fallback_claims = ""
+        self.fallback_description = ""
+
+    def handle_starttag(self, tag: str, attrs_list):
+        is_void = tag in self.VOID_TAGS
+        if not is_void:
+            self.depth += 1
+        attrs = dict(attrs_list)
+        classes = _classes(attrs)
+        itemprop = attrs.get("itemprop") or ""
+
+        if tag == "meta":
+            self._meta(attrs)
+        if itemprop in self.SCALAR_PROPS:
+            datetime_value = attrs.get("datetime")
+            if datetime_value:
+                self.values.setdefault(self.SCALAR_PROPS[itemprop], datetime_value)
+            else:
+                self.captures.append(_Capture(self.SCALAR_PROPS[itemprop], self.depth))
+        elif itemprop == "inventor":
+            self.captures.append(_Capture("inventor", self.depth))
+        elif itemprop == "abstract":
+            self.captures.append(_Capture("abstract", self.depth))
+        elif itemprop == "claims":
+            self.captures.append(_Capture("claims_section", self.depth))
+        elif itemprop == "description":
+            self.captures.append(_Capture("description_section", self.depth))
+
+        if "claim" in classes and "claim-text" not in classes:
+            self.captures.append(_Capture("claim", self.depth))
+        if "description-line" in classes:
+            self.captures.append(_Capture("description_line", self.depth))
+
+    def handle_startendtag(self, tag: str, attrs_list):
+        self.handle_starttag(tag, attrs_list)
+
+    def handle_endtag(self, tag: str):
+        completed = [capture for capture in self.captures if capture.depth == self.depth]
+        for capture in completed:
+            self.captures.remove(capture)
+            self._finish_capture(capture)
+        self.depth = max(0, self.depth - 1)
+
+    def handle_data(self, data: str):
+        text = " ".join(data.split())
+        if not text:
+            return
+        for capture in self.captures:
+            capture.parts.append(text)
+
+    def _meta(self, attrs: dict[str, str | None]) -> None:
+        name = attrs.get("name") or ""
+        scheme = (attrs.get("scheme") or "").lower()
+        content = (attrs.get("content") or "").strip()
+        if not content:
+            return
+        if name == "DC.title":
+            self.values.setdefault("title", content)
+        elif name == "DC.date":
+            self.values.setdefault("publication_date", content)
+        elif name == "DC.contributor" and scheme == "inventor":
+            if content not in self.inventors:
+                self.inventors.append(content)
+        elif name == "DC.contributor" and scheme in {"assignee", "assigneeoriginal"}:
+            self.values.setdefault("assignee", content)
+
+    def _finish_capture(self, capture: _Capture) -> None:
+        text = " ".join(capture.parts).strip()
+        if not text:
+            return
+        if capture.kind == "inventor":
+            if text not in self.inventors:
+                self.inventors.append(text)
+        elif capture.kind == "claim":
+            if text not in self.claims:
+                self.claims.append(text)
+        elif capture.kind == "description_line":
+            if text not in self.description_lines:
+                self.description_lines.append(text)
+        elif capture.kind == "claims_section":
+            if len(text) > len(self.fallback_claims):
+                self.fallback_claims = text
+        elif capture.kind == "description_section":
+            if len(text) > len(self.fallback_description):
+                self.fallback_description = text
+        elif capture.kind == "abstract":
+            if len(text) > len(self.values.get("abstract", "")):
+                self.values["abstract"] = text
+        else:
+            self.values.setdefault(capture.kind, text)
+
+
+def _join_spans(parts: list[str], kind: str) -> tuple[str, list[dict]]:
+    content = ""
+    spans: list[dict] = []
+    for index, part in enumerate(parts, start=1):
+        if content:
+            content += "\n\n"
+        start = len(content)
+        content += part
+        end = len(content)
+        if kind == "claim":
+            match = re.match(r"\s*(\d+)\s*[.)]?", part)
+            label = f"claim {match.group(1)}" if match else f"claim {index}"
+        else:
+            match = re.match(r"\s*\[?(\d{4})\]?", part)
+            label = f"[{match.group(1)}]" if match else f"paragraph {index}"
+        spans.append({"label": label, "start": start, "end": end, "text": part})
+    return content, spans
+
+
+def parse_patent_html(content: str, *, provider: str, url: str, language: str) -> FetchedDocument:
+    parser = _GooglePatentParser()
+    parser.feed(content)
+    publication = (parser.values.get("publication_number") or "").replace(" ", "").upper()
+    if not publication:
+        raise ValueError("Google Patents page has no publication number")
+    claims_parts = parser.claims or ([parser.fallback_claims] if parser.fallback_claims else [])
+    description_parts = parser.description_lines or (
+        [parser.fallback_description] if parser.fallback_description else []
+    )
+    claims_text, claim_spans = _join_spans(claims_parts, "claim")
+    description_text, description_spans = _join_spans(description_parts, "description")
+    abstract = parser.values.get("abstract", "")
+    if not abstract and not claims_text and not description_text:
+        raise ValueError("Google Patents page has no patent text sections")
+    abstract_spans = (
+        [{"label": "abstract", "start": 0, "end": len(abstract), "text": abstract}]
+        if abstract
+        else []
+    )
+    return FetchedDocument(
+        provider=provider,
+        publication_number=publication,
+        application_number=parser.values.get("application_number"),
+        title=parser.values.get("title", ""),
+        assignee=parser.values.get("assignee"),
+        inventors=parser.inventors,
+        priority_date=parser.values.get("priority_date"),
+        filing_date=parser.values.get("filing_date"),
+        publication_date=parser.values.get("publication_date"),
+        grant_date=parser.values.get("grant_date"),
+        language=language,
+        url=url,
+        abstract_text=abstract,
+        claims_text=claims_text,
+        description_text=description_text,
+        section_spans={
+            "abstract": abstract_spans,
+            "claims": claim_spans,
+            "description": description_spans,
+        },
+        raw_metadata={"parser": "google_patents_html_v1"},
+    )
+
+
 class GooglePatentsProvider(SearchProvider):
     name = "google_patents_local"
 
@@ -147,7 +335,7 @@ class GooglePatentsProvider(SearchProvider):
 
     async def search(self, query: SearchQuery) -> list[SearchHit]:
         url = self.build_search_url(query)
-        content = await self._get(url)
+        content = await self._get(url, category="searches")
         records = parse_search_html(content.decode("utf-8", errors="replace"), str(self.settings.base_url))
         hits: list[SearchHit] = []
         seen: set[str] = set()
@@ -178,9 +366,23 @@ class GooglePatentsProvider(SearchProvider):
         return hits
 
     async def fetch(self, request: FetchRequest) -> FetchedDocument:
-        raise NotImplementedError("full-text parsing is implemented by IDEA-GPAT-002")
+        if request.url:
+            url = request.url
+        else:
+            publication = (request.publication_number or "").replace(" ", "").upper()
+            url = (
+                str(self.settings.base_url).rstrip("/")
+                + f"/patent/{publication}/{request.language}"
+            )
+        content = await self._get(url, category="documents")
+        return parse_patent_html(
+            content.decode("utf-8", errors="replace"),
+            provider=self.name,
+            url=url,
+            language=request.language,
+        )
 
-    async def _get(self, url: str) -> bytes:
+    async def _get(self, url: str, *, category: str) -> bytes:
         cache_key = f"gpat:http:{url}"
         if self.cache is not None:
             try:
@@ -198,7 +400,7 @@ class GooglePatentsProvider(SearchProvider):
                 else:
                     content = await self._http_get_with_proxy_fallback(url)
                 if self.cache is not None:
-                    self.cache.put_bytes(cache_key, "searches", content)
+                    self.cache.put_bytes(cache_key, category, content)
                 return content
             except Exception as exc:
                 last_error = exc

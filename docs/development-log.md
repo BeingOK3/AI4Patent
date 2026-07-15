@@ -107,3 +107,15 @@
 - 涉及文件：`config/ai4patent.json`、`config/ai4patent.schema.json`、`backend/requirements.txt`、`backend/idea/config.py`、`backend/idea/providers/google_patents.py`、`backend/idea/providers/__init__.py`、`backend/tests/fixtures/google_patents_search.html`、`backend/tests/test_google_patents_search.py`、`docs/development-log.md`。
 - 提交主题：`feat(idea): [IDEA-GPAT-001] add local Google Patents search`
 - 已知限制：当前部署环境需要可用的外网直连或代理才能获得实时 Google 命中；断网时使用已缓存响应或后续 EXA Provider。
+
+## 2026-07-16 — IDEA-GPAT-002
+
+- 类型：本地 Google Patents 全文抓取与解析
+- 目标：按公开号直接抓取 Google Patents 详情页，提取可供摘要筛选、独权核验和证据定位的结构化全文。
+- 实现：新增公开号规范 URL 构造、详情页 HTML Parser、DC/itemprop 双源元数据提取、发明人/申请人/日期、摘要、逐项权利要求、逐段说明书及 `start/end/text/label` 证据 span；全文响应进入 FIFO `documents` 缓存。
+- 门禁：页面没有公开号或没有任何专利文本章节时返回 `CONTRACT_ERROR`；请求公开号与页面公开号不同时返回 `CONTRACT_ERROR`；不允许用链接或模型推测的正文冒充已抓取内容。
+- 解析容错：支持页面显式 claim/description block，也保留整节 itemprop 回退；正确处理 HTML 空元素，避免 `<meta>`/`<br>` 破坏章节深度计算。
+- 涉及文件：`backend/idea/providers/base.py`、`backend/idea/providers/google_patents.py`、`backend/idea/providers/__init__.py`、`backend/tests/fixtures/google_patent_detail.html`、`backend/tests/test_google_patents_fetch.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_google_patents_fetch ... -v`，48 项全部通过；新增 5 项覆盖元数据/全文/span、公开号 URL、文档缓存、非法页面和公开号不匹配；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-GPAT-002] parse patent full text and evidence spans`
+- 已知限制：实时抓取与搜索共用 `IDEA-GPAT-001` 记录的外网限制；页面结构变化会显式进入契约错误并需要更新 fixture/Parser。

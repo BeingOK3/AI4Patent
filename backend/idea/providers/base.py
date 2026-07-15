@@ -185,6 +185,10 @@ class ProviderRunner:
                 raise ValueError("fetched document provider does not match executor")
             if request.publication_number and not document.publication_number:
                 raise ValueError("fetched document has no publication number")
+            if request.publication_number and self._identifier(request.publication_number) != self._identifier(
+                document.publication_number
+            ):
+                raise ValueError("fetched publication number does not match request")
             return ProviderResult(
                 provider=provider.name,
                 operation="fetch",
@@ -275,3 +279,7 @@ class ProviderRunner:
     @staticmethod
     def _duration(started: float) -> int:
         return max(0, round((time.monotonic() - started) * 1000))
+
+    @staticmethod
+    def _identifier(value: str) -> str:
+        return "".join(character for character in value.upper() if character.isalnum())

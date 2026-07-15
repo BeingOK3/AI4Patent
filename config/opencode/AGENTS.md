@@ -8,23 +8,6 @@
 - 所有步骤一口气执行到底，不要中途停下来等待用户输入。
 - 即便 skill 流程中有"确认"或"提问"步骤，也自动跳过，直接用推断结果继续执行。
 
-## Windows 编码规则
-
-在 Windows 中文环境下执行命令时，**必须**先设置 UTF-8 编码：
-
-```powershell
-$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
-```
-
-执行 Python 脚本时额外设置：
-```powershell
-$env:PYTHONIOENCODING='utf-8'
-```
-
-**CRITICAL**: NEVER use inline `python -c "..."` when the Python code contains Chinese characters. PowerShell will fail to parse Chinese characters in `-c` strings. Always write Python code to a `.py` file first, then execute it.
-
-Node.js 已正确处理 UTF-8，无需额外设置。
-
 ## 搜索规则
 
 **统一使用 EXA MCP 工具进行搜索和网页抓取**，禁止使用 `webfetch`、`web_fetch`、`web_search` 等内置工具（本地网络无法访问 Google 等海外站点，只有 EXA 走海外代理能成功）。

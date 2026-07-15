@@ -16,20 +16,21 @@
 
 ### 环境要求
 
-- Windows 10/11
+- Linux（x86_64 或 ARM64）
 - Python 3.10+
+- Bash、curl、tar
 - 网络访问（用于 EXA 搜索和模型 API）
 
 ### 安装
 
-```powershell
+```bash
 git clone https://github.com/di-jin97/AI4Patent.git
 cd AI4Patent
-.\install.ps1
+./install.sh
 ```
 
-`install.ps1` 会自动完成：
-1. 解压 opencode 引擎到 `bin/opencode/`
+`install.sh` 会自动完成：
+1. 从 OpenCode 官方 release 下载与当前 Linux 架构匹配的引擎到 `bin/opencode/`
 2. 创建 Python 虚拟环境并安装后端依赖
 3. 创建 logs、data、workspace 等目录
 4. 检查 API Key 配置状态
@@ -38,7 +39,7 @@ cd AI4Patent
 
 安装完成后，启动服务并在界面中配置：
 
-1. 运行 `.\start.ps1`（或 `.\dev.ps1`）
+1. 运行 `./start.sh`（或 `./dev.sh`）
 2. 浏览器打开 `http://localhost:8001`
 3. 首次访问会弹出配置框，填入：
    - **Provider 名称**：如 `agent-plan`
@@ -49,20 +50,20 @@ cd AI4Patent
 
 ### 启动
 
-```powershell
+```bash
 # 方式一：后台启动（推荐）
-.\start.ps1
+./start.sh
 
 # 方式二：前台启动（实时日志，开发调试用）
-.\dev.ps1
+./dev.sh
 ```
 
 启动后自动打开浏览器访问 `http://localhost:8001`。
 
 ### 停止
 
-```powershell
-.\stop.ps1
+```bash
+./stop.sh
 ```
 
 ## 使用方法
@@ -109,8 +110,7 @@ AI4Patent/
 ├── frontend/
 │   └── index.html        # 单页前端（5模块并行 + 状态隔离）
 ├── bin/
-│   ├── opencode/         # opencode 引擎（从 zip 解压）
-│   └── opencode-windows-x64.zip
+│   └── opencode/         # 安装时下载的 Linux opencode 引擎
 ├── config/opencode/
    ├── opencode.json      # opencode 配置（模型 + EXA MCP）
    ├── AGENTS.md          # 全局规则（搜索指南、编码规则）
@@ -120,10 +120,10 @@ AI4Patent/
        ├── patent-pct-review/
        ├── patent-value-assessment/
        └── seek-cfp-patent/
-├── install.ps1           # 一键安装
-├── start.ps1             # 后台启动
-├── dev.ps1               # 前台启动（开发模式）
-└── stop.ps1              # 停止服务
+├── install.sh            # 一键安装
+├── start.sh              # 后台启动
+├── dev.sh                # 前台启动（开发模式）
+└── stop.sh               # 停止服务
 ``+
 ### 技术栈
 
@@ -137,10 +137,10 @@ AI4Patent/
 
 | 脚本 | 用途 |
 |------|------|
-| `install.ps1` | 一键安装：解压引擎、创建虚拟环境、安装依赖、创建目录 |
-| `start.ps1` | 后台启动服务 + 自动开浏览器，关闭窗口后服务继续运行 |
-| `dev.ps1` | 前台启动服务，终端实时显示日志，Ctrl+C 退出 |
-| `stop.ps1` | 停止后台运行的服务 |
+| `install.sh` | 一键安装：下载 Linux 引擎、创建虚拟环境、安装依赖、创建目录 |
+| `start.sh` | 后台启动服务，使用 PID 文件管理进程 |
+| `dev.sh` | 前台启动服务，终端实时显示日志，Ctrl+C 退出 |
+| `stop.sh` | 停止由 `start.sh` 启动的服务 |
 
 ## License
 

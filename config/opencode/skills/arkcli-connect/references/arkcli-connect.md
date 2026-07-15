@@ -90,7 +90,7 @@ Done. Removed K skill(s) total.
 
 1. 检查逃生阀：`ARKCLI_SKIP_POSTINSTALL=1` 或 `CI=true` 直接跳过
 2. 校验 platform/arch + binary 是否存在；不在支持名单或文件缺失（例如 `--ignore-scripts`）静默跳过
-3. 尝试打开 `/dev/tty` 双向 fd；拿不到（管道、Windows 等无 controlling tty 场景）静默跳过
+3. 尝试打开 `/dev/tty` 双向 fd；拿不到（例如管道等无 controlling tty 场景）静默跳过
 4. 直接以 `+connect` 启动平台对应的 binary，stdout/stderr 接到 tty，让安装日志落到用户终端（同样走 purge-then-install）
 5. 任何失败一律 `exit 0`，不阻断 npm 主链；想完全静音设 `ARKCLI_SKIP_POSTINSTALL=1`
 

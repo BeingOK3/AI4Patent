@@ -328,3 +328,16 @@
 - 测试：API/Task 定向 8 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，133 项全部通过；主应用导入/OpenAPI/双 Provider 装配冒烟通过；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-API-001] expose durable workflow APIs`
 - 已知限制：当前附件沿用内部上传目录；MVP 前端先提供纯文本 IDEA 和检索参数，附件选择可在后续 UI 迭代显式展示。
+
+## 2026-07-16 — IDEA-UI-001
+
+- 类型：仅 IDEA 三栏前端、历史与结果可视化
+- 目标：移除尚未实现的五模块导航和通用 Agent 会话入口，让内部用户只通过受控 IDEA Workflow 新建、查看和管理完整评估历史。
+- 布局：左栏为共享 Case/Run 历史和终态标识；中栏为 IDEA、评估日、日期依据、quick/standard/deep、候选上限、深读上下限及 11 步持久进度；右栏为结论卡和总览/特征/检索文献/新颖性/创造性/价值/审计限制标签页。
+- 交互：支持新建 Case/Run、SSE 断线可恢复进度、取消、重跑、Run/Case 手动删除、历史报告恢复和 Markdown 导出；刷新页面后从本地 API 重建，不依赖浏览器 session 或 OpenCode 对话上下文。
+- 显示安全：所有 API 文本通过 DOM `textContent` 渲染，不使用 `innerHTML` 注入外部专利内容；报告结论取自权威 `report.json`；未实现模块和 `/api/run` 完全不在新前端出现。
+- 健康状态：页面展示核心/降级状态和 FIFO 缓存使用量；Google Patents 健康探针与 Provider 一致支持环境代理失败后直连。当前主机 Google 直连超时会诚实显示降级，EXA/模型/缓存/Workflow 仍可工作。
+- 涉及文件：`frontend/index.html`、`frontend/style.css`、`frontend/app.js`、`backend/idea/health.py`、`backend/tests/test_frontend.py`、`backend/tests/test_health.py`、`docs/development-log.md`。
+- 测试：前端/健康定向 10 项通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，138 项全部通过；QuickJS 完整脚本解析通过；实际 Uvicorn 启动并请求 HTML/CSS/JS/OpenAPI/health 冒烟通过；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-UI-001] replace frontend with IDEA workspace`
+- 已知限制：当前执行环境没有 Chromium，未执行像素级浏览器截图回归；已完成响应式 CSS 契约、DOM ID、JS 语法、静态资源和真实 HTTP 加载验证。

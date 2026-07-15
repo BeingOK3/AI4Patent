@@ -161,15 +161,24 @@ class HealthService:
         if not settings.enabled:
             return False, "disabled"
         url = str(settings.base_url).rstrip("/") + "/"
-        try:
+        async def probe(*, trust_env: bool):
             async with httpx.AsyncClient(
                 timeout=min(settings.timeout_seconds, 5),
                 headers={"User-Agent": settings.user_agent},
                 follow_redirects=True,
+                trust_env=trust_env,
             ) as client:
-                response = await client.get(url)
+                return await client.get(url)
+
+        try:
+            try:
+                response = await probe(trust_env=settings.trust_environment_proxy)
+            except (ImportError, httpx.ProxyError, httpx.ConnectError):
+                if not settings.fallback_to_direct or not settings.trust_environment_proxy:
+                    raise
+                response = await probe(trust_env=False)
             return response.status_code < 500, f"HTTP {response.status_code}"
-        except httpx.HTTPError as exc:
+        except (ImportError, httpx.HTTPError) as exc:
             return False, type(exc).__name__
 
     async def _timed_google_probe(self) -> dict:

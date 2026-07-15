@@ -4,6 +4,7 @@ import asyncio
 import json
 import tempfile
 import unittest
+from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 from idea.cache import CacheStore
@@ -98,6 +99,32 @@ class HealthServiceTests(unittest.TestCase):
         rendered = json.dumps(result)
         self.assertNotIn("test-only", rendered)
         self.assertNotIn("apiKey", rendered)
+
+    def test_google_probe_falls_back_from_broken_proxy_to_direct(self) -> None:
+        service = HealthService(
+            self.config,
+            self.db,
+            self.cache,
+            opencode_bin=self.opencode,
+            opencode_config_path=self.opencode_config,
+            workflow_recovery_ready=lambda: True,
+        )
+        response = AsyncMock()
+        response.status_code = 200
+        with patch.object(
+            service,
+            "_probe_google_patents",
+            wraps=service._probe_google_patents,
+        ), patch("idea.health.httpx.AsyncClient") as client:
+            proxied = AsyncMock()
+            proxied.__aenter__.return_value.get.side_effect = ImportError("socks")
+            direct = AsyncMock()
+            direct.__aenter__.return_value.get.return_value = response
+            client.side_effect = [proxied, direct]
+            ok, detail = asyncio.run(service._probe_google_patents())
+        self.assertTrue(ok)
+        self.assertEqual(detail, "HTTP 200")
+        self.assertEqual(client.call_args_list[1].kwargs["trust_env"], False)
 
 
 if __name__ == "__main__":

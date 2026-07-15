@@ -12,6 +12,8 @@ from idea.cache import CacheStore
 from idea.config import load_config
 from idea.database import Database
 from idea.health import HealthService
+from idea.run_store import RunStore
+from idea.workflow import WorkflowHarness
 from opencode_client import run_task, kill_current, kill_task
 
 BASE = Path(__file__).resolve().parent.parent
@@ -50,7 +52,19 @@ IDEA_CACHE = CacheStore(
     cleanup_after_write=APP_CONFIG.storage.cache.cleanup_after_write,
 )
 IDEA_CACHE.repair()
-HEALTH_SERVICE = HealthService(APP_CONFIG, IDEA_DB, IDEA_CACHE)
+IDEA_RUN_STORE = RunStore(APP_CONFIG.storage.runs_dir)
+IDEA_WORKFLOW = WorkflowHarness(
+    IDEA_DB,
+    IDEA_RUN_STORE,
+    max_step_attempts=APP_CONFIG.workflow.max_step_attempts,
+)
+IDEA_WORKFLOW.recover_incomplete()
+HEALTH_SERVICE = HealthService(
+    APP_CONFIG,
+    IDEA_DB,
+    IDEA_CACHE,
+    workflow_recovery_ready=lambda: IDEA_WORKFLOW.recovery_ready,
+)
 
 
 def sse(d):

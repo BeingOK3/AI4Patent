@@ -156,3 +156,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_search_strategy ... -v`，67 项全部通过；新增 6 项覆盖细分/宽泛预算、用户上限校验、连续饱和、上限/Provider 停止原因和不凑弱相关文献；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-SEARCH-001] add adaptive search budgets`
 - 已知限制：当前相关性初筛是可解释的词项覆盖分；后续 Document Analyzer 会对入选文献的摘要和独立权利要求作第二层语义核验。
+
+## 2026-07-16 — IDEA-WF-001
+
+- 类型：Harness Workflow 状态机、恢复与完成门禁
+- 目标：由后端持久状态机强制 IDEA 的 11 个步骤顺序、尝试次数、失败、取消、重启恢复和完成条件，不再依赖模型自称已执行。
+- 实现：新增 11 个 `WorkflowStep`、Run 合法状态迁移、顺序步骤开始/成功/失败、输入输出哈希、持久 attempt、进度快照、取消和启动恢复；FastAPI 启动时实际运行恢复器。
+- 恢复语义：服务重启时把未结束步骤标记 `INTERRUPTED / PROCESS_RESTART`，保留原 attempt，后续从同一步的新 attempt 重试；不从头重跑已成功步骤。
+- 完成门禁：所有 11 步的最新 attempt 必须 `SUCCEEDED`；不存在 critical audit；Run Store manifest 及所有引用文件的大小/哈希必须通过复验；否则拒绝 `COMPLETED`。
+- 涉及文件：`backend/idea/workflow.py`、`backend/main.py`、`backend/tests/test_workflow.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_workflow ... -v`，74 项全部通过；新增 7 项覆盖乱序阻止、重试上限、重启恢复、manifest 门禁、critical audit、取消终态和数据库进度；实际导入 `main` 验证健康检查已报告 recovery `ready`；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-WF-001] enforce resumable workflow states`
+- 已知限制：本 Work Unit 提供状态与门禁；各步的具体 Agent/Provider 执行器和后台调度在后续 Work Unit 挂载。

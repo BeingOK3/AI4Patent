@@ -57,3 +57,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，18 项全部通过；新增 6 项覆盖完整 Run、篡改检测、输入门禁、路径穿越、手动删除隔离和重名附件；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-RUNSTORE-001] add durable run manifests`
 - 已知限制：报告内容及完成状态的业务校验将由 Workflow 和 Report Validator 完成。
+
+## 2026-07-16 — IDEA-CACHE-001
+
+- 类型：Harness FIFO 缓存
+- 目标：建立默认 1 GiB 上限的可重建缓存，超限时严格按首次成功写入顺序清理，且不得触及持久 Run 结果。
+- 实现：新增原子缓存写入、单调 `sequence` FIFO 索引、低水位回落、读取租约、强制清理、容量统计和启动修复；文件路径由类别与 key 哈希构造。
+- FIFO 语义：读取不更新顺序；超限后按 `sequence ASC` 删除到低水位；租约中条目暂时跳过；单个对象大于容量上限时不入缓存；相同 key 的不同内容视为冲突并拒绝覆盖。
+- 隔离保证：Cache Store 只接收 `storage.cache_dir`，测试同时建立独立历史文件并验证清理后仍存在。
+- 涉及文件：`backend/idea/cache.py`、`backend/tests/test_cache.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_cache backend.tests.test_run_store backend.tests.test_database backend.tests.test_config -v`，25 项全部通过；新增 7 项覆盖 FIFO 顺序、读取不续期、租约、超大对象、key 冲突、孤儿修复和路径防护；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-CACHE-001] enforce FIFO cache capacity`
+- 已知限制：生产配置的 1 GiB/0.9 GiB 阈值由已验证的统一配置注入；本单元测试用 10/6 字节缩小阈值验证边界。

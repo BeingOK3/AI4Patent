@@ -217,3 +217,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_retrieval ... -v`，93 项全部通过；新增 4 项覆盖双 Provider 并行/去重/持久化、单路降级、全路失败和 10 篇全文本地失败→备路成功。`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-RETRIEVE-001] orchestrate dual-provider retrieval`
 - 已知限制：当前全文抓取是“本地优先、EXA 备用”而不是对同一文献重复抓两份，以控制网络和 token 成本；搜索命中仍是两路并行合并。
+
+## 2026-07-16 — IDEA-DOC-001
+
+- 类型：文献级语义分析、证据包与长期/缓存数据分层
+- 目标：只让 Document Analyzer 读取摘要、独立权利要求和高相关说明书片段，并强制所有披露判断引用后端生成的真实 evidence ID。
+- 实现：新增确定性 evidence packet 构造器，逐段校验原文 offset/text、按权利要求→摘要→相关说明书排序并限制总字符；文献级 Agent 使用有界并发且只接收单篇文献和 F1–Fn，不允许跨文献拼接或直接判断整体新颖性。
+- 证据门禁：输出必须逐一映射全部必要特征；公开号必须匹配；`DISCLOSED/PARTIAL` 只能引用本次 evidence packet 内的 ID；未知 ID、缺失特征或重复分析均 fail closed。
+- 数据分层：成功分析后，SQLite 长期保留文献元数据、全文哈希、原文引文、offset 和特征映射；摘要/权利要求/说明书全文以及 metadata 中的全文 spans 从业务库释放，完整 Provider 响应仍由 1 GiB/FIFO 可重建缓存管理。
+- 涉及文件：`backend/idea/agents.py`、`backend/idea/document_analysis.py`、`backend/tests/test_document_analysis.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_document_analysis ... -v`，96 项全部通过；新增 3 项覆盖真实 span/evidence 持久化与全文释放、伪造 evidence ID 拒绝、必要特征映射缺失拒绝；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-DOC-001] analyze documents with evidence packets`
+- 已知限制：当前说明书片段排序使用可解释的词项覆盖率；复杂同义表达可能降分，但摘要和权利要求始终进入证据包，且后续 Eval 会衡量召回率。

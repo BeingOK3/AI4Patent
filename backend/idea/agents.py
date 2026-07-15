@@ -44,7 +44,7 @@ class IdeaAgentService:
         self.model = model
 
     async def parse_idea(self, run_id: str, idea_text: str) -> IdeaParserOutput:
-        result = await self._call(
+        result = await self.call_agent(
             run_id,
             "patent-idea-parser",
             system_prompt=IDEA_PARSER_PROMPT,
@@ -92,7 +92,7 @@ class IdeaAgentService:
     async def plan_queries(
         self, run_id: str, idea: IdeaParserOutput, *, per_query_limit: int
     ) -> QueryPlannerOutput:
-        result = await self._call(
+        result = await self.call_agent(
             run_id,
             "patent-query-planner",
             system_prompt=QUERY_PLANNER_PROMPT,
@@ -135,7 +135,7 @@ class IdeaAgentService:
                 )
         return output
 
-    async def _call(
+    async def call_agent(
         self,
         run_id: str,
         agent_name: str,

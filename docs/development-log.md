@@ -205,3 +205,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_agents ... -v`，89 项全部通过；新增 4 项覆盖特征持久化/脱敏审计、span 不匹配、Run 内查询 ID 和占位检索式；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-PARSE-001] persist validated idea and query plans`
 - 已知限制：语义正确性仍由固定 Eval 案例衡量；本单元保证的是来源可追溯、结构合法且不能越过检索步骤。
+
+## 2026-07-16 — IDEA-RETRIEVE-001
+
+- 类型：双路并行检索、自适应筛选与全文抓取编排
+- 目标：将 Query Plan、EXA、本地 Google Patents、去重、摘要/日期筛选、饱和停止和全文降级连成可审计的真实检索执行层。
+- 实现：每轮对每个 Q 并行调用所有 Provider，逐调用持久状态/耗时/命中数/错误，逐命中持久原始来源；每轮重新合并、筛选并计算新独立家族/高相关家族。
+- 全文策略：对入选深读公开号使用有界并发；优先本地 Google 结构化全文，失败后用 EXA 文本降级；两路都失败保留逐文献 limitation；成功文桮持久到 `patent_documents/run_documents`。
+- 故障语义：单路全失败生成 `PROVIDER_DEGRADED` 但继续；所有 Provider 失败停止为 `PROVIDERS_UNAVAILABLE`；全文成功数低于 10 生成 `DEEP_REVIEW_FETCHED_BELOW_MINIMUM`。
+- 涉及文件：`backend/idea/retrieval.py`、`backend/tests/test_retrieval.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_retrieval ... -v`，93 项全部通过；新增 4 项覆盖双 Provider 并行/去重/持久化、单路降级、全路失败和 10 篇全文本地失败→备路成功。`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-RETRIEVE-001] orchestrate dual-provider retrieval`
+- 已知限制：当前全文抓取是“本地优先、EXA 备用”而不是对同一文献重复抓两份，以控制网络和 token 成本；搜索命中仍是两路并行合并。

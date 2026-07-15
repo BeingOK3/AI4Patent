@@ -168,3 +168,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_workflow ... -v`，74 项全部通过；新增 7 项覆盖乱序阻止、重试上限、重启恢复、manifest 门禁、critical audit、取消终态和数据库进度；实际导入 `main` 验证健康检查已报告 recovery `ready`；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-WF-001] enforce resumable workflow states`
 - 已知限制：本 Work Unit 提供状态与门禁；各步的具体 Agent/Provider 执行器和后台调度在后续 Work Unit 挂载。
+
+## 2026-07-16 — IDEA-SCHEMA-001
+
+- 类型：受限 Agent 结构化输出 Schema
+- 目标：为 7 类 IDEA Agent 建立 fail-closed JSON 契约，使模型的自然语言声称在进入数据库和后续结论前必须经过程序校验。
+- 实现：新增 Idea Parser、Query Planner、Document Analyzer、Inventive Step、Value Analyzer、Evidence Auditor 和 Report Composer 的严格 Pydantic 模型、Agent 注册表、统一验证入口与 JSON Schema 导出。
+- 证据门禁：`DISCLOSED/PARTIAL` 特征映射必须有 evidence ID；显式特征必须有用户输入 source span；文献内特征 ID 不得重复。
+- 结论门禁：`NOT_NOVEL` 必须且只能有一篇单独覆盖全部特征的破坏性文献；`NOVEL` 允许直接输出但必须列明缺失特征；`NOT_INVENTIVE` 必须对每个区别特征有 D2、evidence 和组合动机，否则只能返回 `NEED_MORE_EVIDENCE/UNCERTAIN`。
+- 涉及文件：`backend/idea/agent_schemas.py`、`backend/tests/test_agent_schemas.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_agent_schemas ... -v`，80 项全部通过；新增 6 项覆盖披露证据、特征唯一、单篇新颖性、直接“具备新颖性”、创造性 D2 证据和 Agent 注册；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-SCHEMA-001] validate agent evidence outputs`
+- 已知限制：Schema 保证结构和逻辑下限；evidence ID 是否真实存在、是否指向原文将由后续 Evidence Auditor 与数据库校验。

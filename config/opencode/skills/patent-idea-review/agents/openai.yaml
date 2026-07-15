@@ -1,0 +1,4 @@
+interface:
+  display_name: "IDEA 专利评估"
+  short_description: "通过受控 Workflow 完成可审计的新颖性、创造性与价值评估"
+  default_prompt: "Use $patent-idea-review to run an audited patent IDEA review for this technical proposal."

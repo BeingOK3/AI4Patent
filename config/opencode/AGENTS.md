@@ -1,70 +1,36 @@
-﻿# Global OpenCode Rules
+# Global OpenCode Rules
 
-## Autonomous Execution - 禁止交互提问
+## Autonomous execution
 
-**强制规则**：全程不要向用户提问、不要等待用户确认。
-- 所有需要的信息从用户输入中自行推断，推断不到的用合理默认值，不要提问。
-- 不要输出"请确认"、"如有不符请指出"、"请回答"、"请选择"等等待用户回复的内容。
-- 所有步骤一口气执行到底，不要中途停下来等待用户输入。
-- 即便 skill 流程中有"确认"或"提问"步骤，也自动跳过，直接用推断结果继续执行。
+Proceed with reasonable defaults instead of pausing for confirmations. Do not claim that an action ran merely because an instruction says to run it. A real tool/API result and its persisted status are required.
 
-## 搜索规则
+Never output or copy API keys. Never place credentials in prompts, reports, logs, Git, or Skill files.
 
-**统一使用 EXA MCP 工具进行搜索和网页抓取**，禁止使用 `webfetch`、`web_fetch`、`web_search` 等内置工具（本地网络无法访问 Google 等海外站点，只有 EXA 走海外代理能成功）。
+## IDEA patent review: mandatory route
 
-### 工具1：exa_web_search_exa（关键词搜索）
+When a user supplies a technical proposal, claim draft, or patent IDEA and requests prior-art search, novelty, inventive step, value, simulated examination, or filing advice:
 
-用途：按关键词搜索网页，返回标题、URL、摘要片段。适合找相关专利、论文、产品文档。
+1. Load only `patent-idea-review`.
+2. Use its local Workflow client/API to create or inspect a Run.
+3. Never load the deprecated `patent-IDEA-analyzer` manual.
+4. Never let the main Agent search, fetch, combine documents, or create evidence IDs itself.
+5. Never claim completion without a terminal successful Run and a Manifest-verified `report.json`.
+6. If the API is unavailable, state that execution did not start; do not replace retrieval with model memory.
 
-```
-exa_web_search_exa(query="SSD write compression NAND flash patent", numResults=20)
-```
+The backend enforces 11 steps. Local Google Patents and EXA MCP are parallel search Providers whose results are independently recorded, merged, normalized, and deduplicated. Provider choice, retries, FIFO cache, fallback, evidence extraction, and conclusion gates belong to the backend.
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| `query` | 搜索关键词，用英文搜索海外内容，用中文搜索国内内容 | -- |
-| `numResults` | 返回结果数量 | 10-20（精确检索用 20） |
+Directly present `具备新颖性` when that is the audited stored conclusion. Include confidence, reason, closest document, missing features, search/Provider scope, and limitations. Do not combine separate documents to destroy novelty.
 
-### 工具2：exa_web_fetch_exa（抓取指定网页全文）
+## Other patent skills
 
-用途：给定一个 URL，返回该页面的完整文本内容。适合抓取专利全文、论文详情页、产品白皮书。
+The current product feature flags enable IDEA only. Other legacy patent Skills remain migration material and must not be presented as product features or described as executed unless the user explicitly invokes one and its real tools are available.
 
-```
-exa_web_fetch_exa(urls=["https://patents.google.com/patent/CN102063547B/en"])
-```
+For a non-IDEA legacy task, follow that Skill's declared tools. EXA configuration is not proof of a successful EXA call. Never record `SUCCESS`, a source, or a quote without the actual returned result.
 
-| 参数 | 说明 | 推荐值 |
-|------|------|--------|
-| `urls` | 要抓取的 URL 数组（可传多个） | 单次 1-3 个 |
-| `maxCharacters` | 返回内容最大字符数 | 专利全文用 100000（默认 50000 可能截断 claims） |
+## Tool factuality
 
-### 专利号 -> URL 拼接规则
-
-给定专利号，构造 Google Patents URL 直接抓取全文：
-
-| 专利号格式 | 拼接 URL | 示例 |
-|-----------|---------|------|
-| CN + 数字 + A/B | `https://patents.google.com/patent/{专利号}/en` | CN102063547B -> `https://patents.google.com/patent/CN102063547B/en` |
-| US + 数字 + B1/B2 | 同上 | US10964349B2 -> `https://patents.google.com/patent/US10964349B2/en` |
-| EP + 数字 + A1/B1 | 同上 | EP1234567A1 -> `https://patents.google.com/patent/EP1234567A1/en` |
-| WO + 数字 + A1 | 同上 | WO2020123456A1 -> `https://patents.google.com/patent/WO2020123456A1/en` |
-
-**通用规则**：任何专利号直接拼 `https://patents.google.com/patent/{专利号}/en`，用 `exa_web_fetch_exa` 抓取。
-
-### 常见搜索场景
-
-| 场景 | 工具 | 示例 |
-|------|------|------|
-| 获取专利全文 | `exa_web_fetch_exa` | `exa_web_fetch_exa(urls=["https://patents.google.com/patent/CN102063547B/en"], maxCharacters=100000)` |
-| 搜索相关专利 | `exa_web_search_exa` | `exa_web_search_exa(query="SSD write compression patent", numResults=20)` |
-| 搜索学术论文 | `exa_web_search_exa` | `exa_web_search_exa(query="NAND flash write amplification reduction paper", numResults=10)` |
-| 搜索友商产品文档 | `exa_web_search_exa` | `exa_web_search_exa(query="Samsung SSD TurboWrite technology whitepaper", numResults=10)` |
-| 抓取友商产品页面 | `exa_web_fetch_exa` | `exa_web_fetch_exa(urls=["https://www.samsung.com/semiconductor/ssd/"])` |
-
-### 注意事项
-
-1. **EXA 走海外服务器代理**，不受本地网络限制，能访问 Google Patents 等被墙站点
-2. **专利全文较长**，默认 `maxCharacters=50000` 可能截断 claims 部分，建议设为 `100000`
-3. **搜索用英文**：海外专利和论文用英文关键词搜索效果更好；中文专利可用中文搜索
-4. **不要用内置 `webfetch`**：它走本地网络，Google 等海外站点会超时
-5. 有把握的事实直接回答，不确定时再用 EXA 搜索验证
+- A submitted Run is not a completed Run.
+- A search call with no hits is `EMPTY`, not evidence.
+- Timeout, nonzero exit, invalid JSON, unknown evidence, hash mismatch, and partial output are failures or limitations, not completion.
+- Use persisted Case/Run history rather than conversation memory.
+- Do not bypass report Manifest verification by opening files directly.

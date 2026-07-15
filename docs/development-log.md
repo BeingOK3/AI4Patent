@@ -341,3 +341,15 @@
 - 测试：前端/健康定向 10 项通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，138 项全部通过；QuickJS 完整脚本解析通过；实际 Uvicorn 启动并请求 HTML/CSS/JS/OpenAPI/health 冒烟通过；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-UI-001] replace frontend with IDEA workspace`
 - 已知限制：当前执行环境没有 Chromium，未执行像素级浏览器截图回归；已完成响应式 CSS 契约、DOM ID、JS 语法、静态资源和真实 HTTP 加载验证。
+
+## 2026-07-16 — IDEA-SKILL-001
+
+- 类型：薄 Skill、确定性 CLI 与 OpenCode 强制路由
+- 目标：把原 1100 余行“写给模型看的操作手册”替换为只负责输入归一化、调用本地受控 Workflow、等待持久终态和展示权威报告的薄入口，消除模型自行选择、跳过或声称已执行步骤的空间。
+- Skill：新增 103 行 `patent-idea-review/SKILL.md`，将 API、预算、证据结论和报告字段拆入 4 份按需 references；新增无第三方依赖的 `idea_workflow.py`，支持 health/history/start/status/wait/report/cancel/run，输入或预算无效时不创建孤儿 Case。
+- 路由：重写 `AGENTS.md` 的 IDEA 强制规则，取消全局 EXA-only 假设；IDEA 只能装载新 Skill 并调用 Workflow，未获得成功终态及 Manifest 验证报告时不得声称完成。本地 Google Patents 与 EXA 由后端并行、独立留痕、合并去重和降级。
+- 迁移：原 `patent-IDEA-analyzer` 保留完整正文并标为 DEPRECATED/DO NOT LOAD，仅作行为回归和后续资料迁移；Skills README 将当前产品入口、直接“具备新颖性”的证据限制和双 Provider 故障语义写清。
+- 涉及文件：`config/opencode/AGENTS.md`、`config/opencode/skills/README.md`、`config/opencode/skills/patent-IDEA-analyzer/SKILL.md`、`config/opencode/skills/patent-idea-review/`、`backend/tests/test_skill_cli.py`、`docs/development-log.md`。
+- 测试：Skill CLI 5 项合约测试全部通过；Skill Creator `quick_validate.py` 通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，143 项全部通过；实际 Uvicorn 下执行 health/history 冒烟通过；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-SKILL-001] route IDEA skill through workflow`
+- 已知限制：当前主机访问 Google Patents 直连仍可能超时并显示 degraded；这不会被伪装成成功，本地缓存和 EXA 备路仍由后端按真实状态工作。完整在线 Run 在下一工作单元验证。

@@ -153,11 +153,14 @@
         "exa_mcp": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "timeout_seconds", "max_attempts"],
+          "required": ["enabled", "timeout_seconds", "max_attempts", "endpoint", "search_tool", "fetch_tool"],
           "properties": {
             "enabled": {"type": "boolean"},
             "timeout_seconds": {"type": "integer", "minimum": 1},
-            "max_attempts": {"type": "integer", "minimum": 1}
+            "max_attempts": {"type": "integer", "minimum": 1},
+            "endpoint": {"type": "string", "format": "uri"},
+            "search_tool": {"type": "string", "minLength": 1},
+            "fetch_tool": {"type": "string", "minLength": 1}
           }
         },
         "google_patents_local": {

@@ -89,6 +89,12 @@ class ProviderSettings(StrictModel):
     max_attempts: int = Field(ge=1)
 
 
+class ExaSettings(ProviderSettings):
+    endpoint: HttpUrl
+    search_tool: str = Field(min_length=1)
+    fetch_tool: str = Field(min_length=1)
+
+
 class GooglePatentsSettings(ProviderSettings):
     base_url: HttpUrl
     min_request_interval_seconds: float = Field(ge=0)
@@ -102,7 +108,7 @@ class LocalCacheProviderSettings(StrictModel):
 
 
 class SearchProviders(StrictModel):
-    exa_mcp: ProviderSettings
+    exa_mcp: ExaSettings
     google_patents_local: GooglePatentsSettings
     local_cache: LocalCacheProviderSettings
 

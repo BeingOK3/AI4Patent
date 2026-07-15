@@ -51,7 +51,10 @@
       "exa_mcp": {
         "enabled": true,
         "timeout_seconds": 45,
-        "max_attempts": 3
+        "max_attempts": 3,
+        "endpoint": "https://mcp.exa.ai/mcp",
+        "search_tool": "web_search_exa",
+        "fetch_tool": "crawling_exa"
       },
       "google_patents_local": {
         "enabled": true,

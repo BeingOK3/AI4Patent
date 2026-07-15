@@ -119,3 +119,16 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_google_patents_fetch ... -v`，48 项全部通过；新增 5 项覆盖元数据/全文/span、公开号 URL、文档缓存、非法页面和公开号不匹配；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-GPAT-002] parse patent full text and evidence spans`
 - 已知限制：实时抓取与搜索共用 `IDEA-GPAT-001` 记录的外网限制；页面结构变化会显式进入契约错误并需要更新 fixture/Parser。
+
+## 2026-07-16 — IDEA-EXA-001
+
+- 类型：EXA MCP 受控 Provider
+- 目标：将 EXA 从“模型可自行决定是否调用”改为后端显式执行、契约校验和缓存的检索 Provider。
+- 实现：新增 Streamable HTTP MCP 客户端，完整执行 `initialize`、`notifications/initialized`、`tools/call`，携带协议版本和 session header，并支持 JSON/SSE 响应解码、JSON-RPC id/error 校验、`isError` 门禁与环境代理失败后直连。
+- Provider 适配：支持 EXA `structuredContent`、JSON 文本与 Markdown 回退结果；专利检索自动加 Google Patents 定向词；公开号从专利 URL 可追溯提取；搜索/抓取工具响应进入 FIFO 缓存。
+- 统一配置：EXA 新增 `endpoint`、`search_tool`、`fetch_tool`，后端不再从超长 Skill 文本推测工具名。
+- 离线测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_exa_provider ... -v`，55 项全部通过；新增 7 项覆盖 MCP 三步握手/session、SSE、结构化去重、JSON 文本、抓取回退、MCP 故障和缓存；配置/Schema JSON 与 `git diff --check` 通过。
+- 在线冒烟测试：对真实 `https://mcp.exa.ai/mcp` 执行检索，返回 `SUCCESS / 3 hits / no error`；未输出或记录响应全文。
+- 涉及文件：`config/ai4patent.json`、`config/ai4patent.schema.json`、`backend/idea/config.py`、`backend/idea/providers/exa.py`、`backend/idea/providers/__init__.py`、`backend/tests/test_exa_provider.py`、`docs/development-log.md`。
+- 提交主题：`feat(idea): [IDEA-EXA-001] add audited EXA MCP provider`
+- 已知限制：EXA 抓取返回的非结构化文本只能作为降级全文，章节精确度低于本地 Google HTML Parser，报告必须标注 `structured_sections=false`。

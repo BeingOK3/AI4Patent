@@ -242,3 +242,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -v`，103 项全部通过；新增 7 项覆盖单篇原则、10 篇直接新颖结论、数量不足降级、多破坏文献、证据哈希篡改、评估日后文献和 Schema 多文献语义；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-NOVELTY-001] enforce single-document novelty decisions`
 - 已知限制：当前置信度由已验证映射确定性聚合，不代表检索空间的统计覆盖概率；报告必须同时展示检索范围、Provider 状态和停止原因。
+
+## 2026-07-16 — IDEA-INVENT-001
+
+- 类型：多 D1 创造性路线与受限并发 Agent
+- 目标：把程序处理和语义判断拆开：后端选择多个最接近 D1、准备区别特征和 D2 证据，多个 Agent 实例并发分析各自路线，但不得自行搜索或编造证据。
+- 实现：按单篇已披露特征数和映射置信度选择最多 3 条 D1 路线；每个区别特征只注入其他深读文献中已持久化的 `DISCLOSED/PARTIAL` D2 候选和原文引文；所有路线先全部通过契约再单事务持久化，避免部分成功留下半套结果。
+- 结论门禁：Route ID、D1、公开号、区别特征集合必须精确匹配；D2 公开号和 evidence ID 必须来自该区别特征的候选且逐项绑定；`NOT_INVENTIVE` 要求每个区别特征至少有一个完全 `DISCLOSED` 的 D2 教导、有引文且有组合动机，只有部分披露时强制拒绝。
+- 短路语义：新颖性已被单篇文献破坏时不再消耗模型调用分析创造性，创造性步骤以“不适用”空路线正常结束。
+- 涉及文件：`backend/idea/inventiveness.py`、`backend/tests/test_inventiveness.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，107 项全部通过；新增 4 项覆盖多 D1 并发和原子持久化、伪造 evidence 拒绝、不新颖短路、仅部分披露 D2 不得得出不具创造性；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-INVENT-001] analyze bounded multi-D1 routes`
+- 已知限制：当前每个区别特征最多注入 5 个 D2 候选以控制 token；候选耗尽或组合动机证据不足时必须返回 `NEED_MORE_EVIDENCE/UNCERTAIN`，不会扩展为 Agent 自主搜索。

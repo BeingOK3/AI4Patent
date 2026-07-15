@@ -302,3 +302,16 @@
 - 测试：Parser/Planner/数据库定向 11 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，120 项全部通过；新增写一次/哈希/幂等和两个 Agent 同事务检查点断言；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-CKPT-001] add write-once stage checkpoints`
 - 已知限制：Provider 网络调用无法与 SQLite 事务原子提交；执行器会在缺少完成检查点时清理该步骤的临时调用/命中记录后按固定 request 重新执行，且不会把中间状态标记为成功。
+
+## 2026-07-16 — IDEA-WF-002
+
+- 类型：固定 11 步端到端执行器、局部重试与恢复
+- 目标：把所有已实现服务串成后端强制 Workflow，模型不能选择、跳过或伪造步骤；失败、超时、恢复、审计和 Manifest 决定真实终态。
+- 实现：新增 Workflow Executor，依次执行输入快照、解析、模型校验、查询规划、检索、全文抓取、文献分析、新颖性、创造性、价值、审计与报告；每步使用 Harness attempt/timeout/output hash 和 write-once stage checkpoint。
+- 恢复语义：Parser/Planner 从原子检查点恢复；检索缺少完成检查点时只清理该步临时 tool_calls/search_hits 后重试；全文抓取重试只清理未分析 Run 关联并重新回填共享文献的临时全文；文献分析按 `deep_reviewed=0` 继续剩余文献；新颖性/创造性/价值/审计/报告从各自持久结果恢复。
+- 完成门禁：critical 审计在报告前阻断并按 attempt 上限进入 FAILED；报告完成后再次复验 11 步、audit_results 和 Manifest 全文件哈希；最终门禁失败明确写入 `COMPLETION_GATE_FAILED`，不得返回完成。
+- 必要特征修正：`required=false` 的可选/推断特征保留在 IDEA 和报告中，但不进入 Document Analyzer 必要映射、新颖性单篇覆盖和审计完整性计数。
+- 涉及文件：`backend/idea/execution.py`、`backend/idea/retrieval.py`、`backend/idea/novelty.py`、`backend/idea/audit.py`、`backend/tests/test_execution.py`、`backend/tests/test_novelty.py`、`backend/tests/test_audit.py`、`docs/development-log.md`。
+- 测试：定向 19 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，125 项全部通过；新增 5 个执行器场景覆盖固定图、单步重试、崩溃窗口检查点、critical 审计、Manifest 篡改，另覆盖可选特征；`compileall` 与 `git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-WF-002] execute the fixed review workflow`
+- 已知限制：本单元提供执行器本体；后台 Task 管理、SSE/API 和启动时自动重新调度在后续 API Work Unit 接入。

@@ -123,6 +123,14 @@ class AuditServiceTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM audit_results").fetchone()[0], 0)
 
     def test_clean_deterministic_and_semantic_audit_persists_completion(self) -> None:
+        with self.db.connect() as connection:
+            connection.execute(
+                "INSERT INTO idea_features VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    f"{self.run_id}:F2", self.run_id, 2, "optional", "inferred", None,
+                    None, json.dumps({"external_feature_id": "F2", "required": False}),
+                ),
+            )
         model = AuditModel()
         service = AuditService(self.db, IdeaAgentService(self.db, model), minimum_deep_reviews=1)
         findings = asyncio.run(service.audit(self.run_id, self.novelty, [], value()))

@@ -122,6 +122,11 @@ class NoveltyService:
             feature_rows = connection.execute(
                 "SELECT * FROM idea_features WHERE run_id = ? ORDER BY ordinal", (run_id,)
             ).fetchall()
+            feature_rows = [
+                row
+                for row in feature_rows
+                if self._feature_required(row)
+            ]
             document_rows = connection.execute(
                 """
                 SELECT d.document_id,d.publication_number,d.publication_date
@@ -134,6 +139,14 @@ class NoveltyService:
                 (run_id,),
             ).fetchall()
         return run, feature_rows, document_rows
+
+    @staticmethod
+    def _feature_required(row) -> bool:
+        try:
+            metadata = json.loads(row["metadata_json"] or "{}")
+        except json.JSONDecodeError as exc:
+            raise NoveltyGateError("invalid feature metadata JSON") from exc
+        return metadata.get("required", True) is not False
 
     def _build_document_matrix(
         self,

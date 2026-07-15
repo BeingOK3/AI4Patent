@@ -364,6 +364,36 @@ class RetrievalService:
             ).fetchone()
             if existing:
                 document_id = existing["document_id"]
+                if document.family_id:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO patent_families(family_id,source) VALUES(?,?)",
+                        (document.family_id, document.provider),
+                    )
+                connection.execute(
+                    """
+                    UPDATE patent_documents SET
+                        application_number = COALESCE(?,application_number),
+                        family_id = COALESCE(?,family_id), title = COALESCE(NULLIF(?,''),title),
+                        assignee = COALESCE(?,assignee), inventors_json = ?,
+                        priority_date = COALESCE(?,priority_date), filing_date = COALESCE(?,filing_date),
+                        publication_date = COALESCE(?,publication_date), grant_date = COALESCE(?,grant_date),
+                        url = COALESCE(NULLIF(?,''),url), abstract_text = ?, claims_text = ?,
+                        description_text = ?, content_hash = ?, metadata_json = ?, updated_at = ?
+                    WHERE document_id = ?
+                    """,
+                    (
+                        document.application_number, document.family_id,
+                        document.title or merged_hit.title, document.assignee or merged_hit.assignee,
+                        canonical_json(document.inventors),
+                        document.priority_date or merged_hit.priority_date,
+                        document.filing_date or merged_hit.filing_date,
+                        document.publication_date or merged_hit.publication_date,
+                        document.grant_date, document.url, document.abstract_text,
+                        document.claims_text, document.description_text, content_hash,
+                        canonical_json({**document.raw_metadata, "section_spans": document.section_spans}),
+                        timestamp, document_id,
+                    ),
+                )
             else:
                 document_id = str(uuid.uuid4())
                 if document.family_id:

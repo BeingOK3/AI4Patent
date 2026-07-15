@@ -87,12 +87,21 @@ class NoveltyServiceTests(unittest.TestCase):
         self.assertFalse(any(matrix.destroys_novelty for matrix in result.matrices))
 
     def test_direct_novel_result_requires_minimum_deep_reviews(self) -> None:
+        with self.db.connect() as connection:
+            connection.execute(
+                "INSERT INTO idea_features VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    f"{self.run_id}:F3", self.run_id, 3, "optional feature", "inferred",
+                    None, None, json.dumps({"external_feature_id": "F3", "required": False}),
+                ),
+            )
         for number in range(1, 11):
             self.add_document(number, ("DISCLOSED", "NOT_DISCLOSED"))
         result = NoveltyService(self.db).determine(self.run_id)
         self.assertEqual(result.conclusion, "NOVEL")
         self.assertIn("具备新颖性", result.rationale)
         self.assertEqual(result.missing_features, ["F2"])
+        self.assertTrue(all(len(matrix.mappings) == 2 for matrix in result.matrices))
 
     def test_below_minimum_is_uncertain_not_false_novel(self) -> None:
         self.add_document(1, ("DISCLOSED", "NOT_DISCLOSED"))

@@ -135,6 +135,11 @@ class AuditService:
                 "SELECT feature_id,metadata_json FROM idea_features WHERE run_id = ?",
                 (run_id,),
             ).fetchall()
+            feature_rows = [
+                feature
+                for feature in feature_rows
+                if self._json_object(feature["metadata_json"]).get("required", True) is not False
+            ]
             feature_count = len(feature_rows)
             feature_external = {}
             for feature in feature_rows:
@@ -332,6 +337,14 @@ class AuditService:
         if len(compact) == 8 and compact.isdigit():
             compact = f"{compact[:4]}-{compact[4:6]}-{compact[6:]}"
         return date.fromisoformat(compact)
+
+    @staticmethod
+    def _json_object(value: str) -> dict[str, Any]:
+        try:
+            parsed = json.loads(value or "{}")
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
 
     @staticmethod
     def _finding(severity: str, code: str, message: str, details: dict) -> dict[str, Any]:

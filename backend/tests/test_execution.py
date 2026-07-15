@@ -1,0 +1,238 @@
+from __future__ import annotations
+
+import asyncio
+import tempfile
+import unittest
+from pathlib import Path
+
+from idea.agent_schemas import IdeaParserOutput, NoveltyResult, QueryPlannerOutput, ValueAnalyzerOutput
+from idea.config import load_config
+from idea.database import Database
+from idea.execution import WorkflowExecutor
+from idea.retrieval import FetchResult, RetrievalResult
+from idea.run_store import RunStore
+from idea.search_strategy import StopReason
+from idea.workflow import WORKFLOW_STEPS, WorkflowHarness
+
+
+def parsed_idea():
+    return IdeaParserOutput.model_validate({
+        "title": "cache", "technical_domains": ["storage"], "application_scenario": "GPU",
+        "technical_problem": "reduce misses",
+        "features": [{"feature_id": "F1", "feature_text": "heat eviction", "source_type": "normalized"}],
+        "claimed_effects": ["less work"], "subject_types": ["method"], "scope_breadth": "narrow",
+    })
+
+
+def query_plan():
+    return QueryPlannerOutput.model_validate({
+        "term_groups": [
+            {"concept": "cache", "zh_terms": ["缓存"], "en_terms": ["cache"]},
+            {"concept": "heat", "zh_terms": ["热度"], "en_terms": ["heat"]},
+        ],
+        "queries": [
+            {"query_id": "Q1", "round_number": 1, "query_type": "technical_means", "language": "en", "query_text": "cache heat eviction", "rationale": "means"},
+            {"query_id": "Q2", "round_number": 1, "query_type": "problem_effect", "language": "en", "query_text": "reduce cache miss", "rationale": "effect"},
+        ],
+    })
+
+
+def novelty_result():
+    return NoveltyResult.model_validate({
+        "conclusion": "NOVEL", "confidence": 0.7,
+        "matrices": [{
+            "publication_number": "US1A1",
+            "mappings": [{"feature_id": "F1", "status": "NOT_DISCLOSED", "evidence_ids": [], "rationale": "missing", "confidence": 0.8}],
+            "destroys_novelty": False,
+        }],
+        "destroying_publication_number": None, "closest_publication_number": "US1A1",
+        "missing_features": ["F1"], "rationale": "具备新颖性",
+    })
+
+
+def value_result():
+    return ValueAnalyzerOutput.model_validate({
+        "detectability": {"rating": "MEDIUM", "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
+        "workaround_difficulty": {"rating": "MEDIUM", "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
+        "technical_market_value": {"rating": "MEDIUM", "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
+        "alternative_paths": ["path one", "path two"], "recommendation": "WATCH", "rationale": "preliminary",
+    })
+
+
+class FakeAgents:
+    def __init__(self):
+        self.parse_calls = 0
+
+    async def parse_idea(self, run_id, text):
+        self.parse_calls += 1
+        return parsed_idea()
+
+    async def plan_queries(self, run_id, idea, *, per_query_limit):
+        return query_plan()
+
+
+class FakeRetrieval:
+    def __init__(self, fail_once=False):
+        self.retrieve_calls = 0
+        self.fail_once = fail_once
+
+    async def retrieve(self, **kwargs):
+        self.retrieve_calls += 1
+        if self.fail_once and self.retrieve_calls == 1:
+            raise ConnectionError("temporary search failure")
+        return RetrievalResult(
+            merged_hits=[], screened=[], selected_publication_numbers=[], provider_calls={},
+            stop_reason=StopReason.QUERY_EXHAUSTED, limitations=[], rounds=[],
+        )
+
+    async def fetch_selected(self, **kwargs):
+        return FetchResult(documents=[], document_ids={}, limitations=[])
+
+
+class FakeDocuments:
+    async def analyze_many(self, **kwargs):
+        return {}
+
+
+class FakeNovelty:
+    def determine(self, run_id):
+        return novelty_result()
+
+
+class FakeInventiveness:
+    async def analyze(self, run_id, novelty):
+        return []
+
+
+class FakeValue:
+    async def analyze(self, *args):
+        return value_result()
+
+
+class FakeAudit:
+    def __init__(self, critical=False):
+        self.critical = critical
+        self.calls = 0
+
+    async def audit(self, *args):
+        self.calls += 1
+        return [{
+            "severity": "critical" if self.critical else "info",
+            "code": "FIXTURE_AUDIT", "message": "fixture", "details": {},
+        }]
+
+
+class FakeReporting:
+    def __init__(self, database, store):
+        self.database = database
+        self.store = store
+        self.calls = 0
+
+    async def generate(self, run_id, *args, **kwargs):
+        self.calls += 1
+        run = self.database.get_run(run_id)
+        report = {
+            "schema_version": "test",
+            "audit": {"counts": {"critical": 0, "warning": 0, "info": 1}},
+        }
+        self.store.write_reports(
+            run["case_id"], run_id, report=report, markdown="# test\n",
+            manifest_metadata={"fixture": True},
+        )
+        return report
+
+
+class CorruptReporting(FakeReporting):
+    async def generate(self, run_id, *args, **kwargs):
+        report = await super().generate(run_id, *args, **kwargs)
+        run = self.database.get_run(run_id)
+        self.store.paths(run["case_id"], run_id).report_md.write_text(
+            "corrupted", encoding="utf-8"
+        )
+        return report
+
+
+class WorkflowExecutorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.db = Database(root / "idea.db")
+        self.db.initialize()
+        self.store = RunStore(root / "runs")
+        self.config = load_config()
+        workflow = self.config.workflow.model_copy(
+            update={"max_step_attempts": 2, "step_timeout_seconds": 5}
+        )
+        self.config = self.config.model_copy(update={"workflow": workflow})
+        self.case = self.db.create_case("Execution")
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def create_run(self):
+        return self.db.create_run(
+            case_id=self.case["case_id"], input_text="idea", evaluation_date="2026-07-16",
+            date_basis="default", analysis_scope="full", model="stub", skill_version="1",
+            workflow_version="1", config_snapshot={}, settings={"search_mode": "quick"},
+        )
+
+    def executor(self, run, *, retrieval=None, audit=None, agents=None, reporting=None):
+        harness = WorkflowHarness(self.db, self.store, max_step_attempts=2)
+        return WorkflowExecutor(
+            self.config, self.db, self.store, harness, agents or FakeAgents(),
+            retrieval or FakeRetrieval(), FakeDocuments(), FakeNovelty(),
+            FakeInventiveness(), FakeValue(), audit or FakeAudit(),
+            reporting or FakeReporting(self.db, self.store),
+        )
+
+    def test_fixed_graph_completes_all_eleven_steps_and_manifest(self) -> None:
+        run = self.create_run()
+        executor = self.executor(run)
+        status = asyncio.run(executor.execute(run["run_id"]))
+        self.assertEqual(status, "COMPLETED")
+        progress = executor.harness.progress(run["run_id"])
+        self.assertEqual(progress["completed_steps"], len(WORKFLOW_STEPS))
+        self.store.verify(self.case["case_id"], run["run_id"])
+
+    def test_transient_step_failure_retries_only_that_step(self) -> None:
+        run = self.create_run()
+        retrieval = FakeRetrieval(fail_once=True)
+        executor = self.executor(run, retrieval=retrieval)
+        status = asyncio.run(executor.execute(run["run_id"]))
+        self.assertEqual(status, "COMPLETED")
+        self.assertEqual(retrieval.retrieve_calls, 2)
+        with self.db.connect() as connection:
+            attempts = connection.execute(
+                "SELECT COUNT(*) FROM run_steps WHERE run_id = ? AND step_name = 'RETRIEVE_CANDIDATES'",
+                (run["run_id"],),
+            ).fetchone()[0]
+        self.assertEqual(attempts, 2)
+
+    def test_write_once_parser_checkpoint_is_reused_after_crash_window(self) -> None:
+        run = self.create_run()
+        self.db.put_stage_result(run["run_id"], "PARSE_IDEA", parsed_idea().model_dump(mode="json"))
+        agents = FakeAgents()
+        executor = self.executor(run, agents=agents)
+        self.assertEqual(asyncio.run(executor.execute(run["run_id"])), "COMPLETED")
+        self.assertEqual(agents.parse_calls, 0)
+
+    def test_critical_audit_exhausts_step_and_never_writes_report(self) -> None:
+        run = self.create_run()
+        audit = FakeAudit(critical=True)
+        executor = self.executor(run, audit=audit)
+        self.assertEqual(asyncio.run(executor.execute(run["run_id"])), "FAILED")
+        self.assertEqual(audit.calls, 2)
+        self.assertFalse(self.store.paths(self.case["case_id"], run["run_id"]).manifest.exists())
+
+    def test_manifest_completion_gate_marks_run_failed(self) -> None:
+        run = self.create_run()
+        executor = self.executor(
+            run, reporting=CorruptReporting(self.db, self.store)
+        )
+        self.assertEqual(asyncio.run(executor.execute(run["run_id"])), "FAILED")
+        stored = self.db.get_run(run["run_id"])
+        self.assertEqual(stored["error_code"], "COMPLETION_GATE_FAILED")
+
+
+if __name__ == "__main__":
+    unittest.main()

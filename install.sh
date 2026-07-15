@@ -17,6 +17,28 @@ require_command python3
 require_command curl
 require_command tar
 
+disable_unavailable_local_proxies() {
+    local variable proxy endpoint host port
+    for variable in HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; do
+        proxy="${!variable:-}"
+        [[ -n "$proxy" ]] || continue
+
+        endpoint="${proxy#*://}"
+        endpoint="${endpoint##*@}"
+        endpoint="${endpoint%%/*}"
+        if [[ "$endpoint" =~ ^(127\.0\.0\.1|localhost):([0-9]+)$ ]]; then
+            host="${BASH_REMATCH[1]}"
+            port="${BASH_REMATCH[2]}"
+            if ! (exec 3<>"/dev/tcp/$host/$port") 2>/dev/null; then
+                echo "检测到不可用的本地代理 $proxy，已忽略 $variable 并改用直连。" >&2
+                unset "$variable"
+            fi
+        fi
+    done
+}
+
+disable_unavailable_local_proxies
+
 case "$(uname -m)" in
     x86_64|amd64) arch="x64" ;;
     aarch64|arm64) arch="arm64" ;;

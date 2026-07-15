@@ -144,3 +144,15 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_merge ... -v`，61 项全部通过；新增 6 项覆盖编号规范化、双 Provider 同公开号、A1/B2 同申请、跨国已知同族、模糊同族不误合并和多查询溯源；`git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-MERGE-001] merge and deduplicate provider hits`
 - 已知限制：没有 Provider 明确同族 ID 时，模糊同族只标记待确认；不为节省分析量而强行合并。
+
+## 2026-07-16 — IDEA-SEARCH-001
+
+- 类型：自适应检索预算、饱和停止与摘要筛选
+- 目标：使宽泛范围和细分范围使用不同检索/深读规模，同时将用户上限、最低深读目标和停止原因变成确定性算法。
+- 实现：新增 `narrow/medium/broad` 范围评估，依据技术领域数、必要特征数和检索词具体度构建预算；支持 quick/standard/deep 与用户自定义上限；新增连续轮次饱和跟踪和摘要/日期确定性初筛。
+- 停止原因：`SATURATED`、`CANDIDATE_MAX`、`QUERY_EXHAUSTED`、`PROVIDERS_UNAVAILABLE`；用户上限和 Provider 全失败不得伪装成检索饱和。
+- 深读语义：细分范围取 `deep_review_min`，宽范围逐步增加到 `deep_review_max`；下限始终不得低于 10；只选入评估日之前且达到相关性门槛的文献，不足时返回 `INSUFFICIENT_RELEVANT_DEEP_REVIEWS` 而不用弱相关结果凑数。
+- 涉及文件：`backend/idea/search_strategy.py`、`backend/tests/test_search_strategy.py`、`docs/development-log.md`。
+- 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest backend.tests.test_search_strategy ... -v`，67 项全部通过；新增 6 项覆盖细分/宽泛预算、用户上限校验、连续饱和、上限/Provider 停止原因和不凑弱相关文献；`git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-SEARCH-001] add adaptive search budgets`
+- 已知限制：当前相关性初筛是可解释的词项覆盖分；后续 Document Analyzer 会对入选文献的摘要和独立权利要求作第二层语义核验。

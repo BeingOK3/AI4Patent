@@ -57,6 +57,20 @@ class FakeProvider(SearchProvider):
         )
 
 
+class MissingIdentifierProvider(FakeProvider):
+    async def search(self, query):
+        hits = await super().search(query)
+        hits[-1] = SearchHit(
+            provider=self.name,
+            provider_rank=len(hits),
+            title="cache eviction token heat patent without identifier",
+            url="https://example.test/patent-result-without-publication-number",
+            snippet="cache eviction based on token heat threshold",
+            publication_date="2020-01-01",
+        )
+        return hits
+
+
 def plan():
     return QueryPlannerOutput.model_validate({
         "term_groups": [
@@ -159,6 +173,58 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertEqual(len(fetched.documents), 10)
         self.assertEqual(exa.fetch_calls, 10)
         self.assertEqual(local.fetch_calls, 0)
+
+    def test_retrieve_excludes_relevant_hit_without_publication_number(self) -> None:
+        _, result = self.retrieve([MissingIdentifierProvider("exa_mcp")])
+        self.assertNotIn("", result.selected_publication_numbers)
+        self.assertEqual(len(result.selected_publication_numbers), 9)
+        self.assertTrue(
+            any(
+                item["code"] == "DEEP_REVIEW_IDENTIFIER_MISSING"
+                for item in result.limitations
+            )
+        )
+
+    def test_fetch_skips_blank_and_duplicate_checkpoint_entries(self) -> None:
+        provider = FakeProvider("exa_mcp")
+        service, result = self.retrieve([provider])
+        result.selected_publication_numbers.insert(3, "")
+        result.selected_publication_numbers.append(result.selected_publication_numbers[0])
+
+        fetched = asyncio.run(
+            service.fetch_selected(run_id=self.run["run_id"], retrieval=result)
+        )
+
+        self.assertEqual(len(fetched.documents), 10)
+        self.assertEqual(provider.fetch_calls, 10)
+        codes = {item["code"] for item in fetched.limitations}
+        self.assertIn("DEEP_REVIEW_IDENTIFIER_MISSING", codes)
+        self.assertIn("DUPLICATE_DEEP_REVIEW_SELECTION", codes)
+
+    def test_fetch_cancels_siblings_when_internal_task_fails(self) -> None:
+        provider = FakeProvider("exa_mcp")
+        service, result = self.retrieve([provider])
+        first_publication = result.selected_publication_numbers[0]
+        cancelled = []
+
+        async def fail_one_and_wait(
+            run_id, publication, urls, language, *, providers=None
+        ):
+            if publication == first_publication:
+                await asyncio.sleep(0.01)
+                raise RuntimeError("internal fetch failure")
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                cancelled.append(publication)
+                raise
+
+        service._fetch_with_fallback = fail_one_and_wait
+        with self.assertRaisesRegex(RuntimeError, "internal fetch failure"):
+            asyncio.run(
+                service.fetch_selected(run_id=self.run["run_id"], retrieval=result)
+            )
+        self.assertTrue(cancelled)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,9 @@ from enum import StrEnum
 from typing import Iterable, Literal
 
 from .config import SearchMode, SearchSettings
-from .merge import MergedHit
+from .merge import MergedHit, normalize_publication_number
+
+DEFAULT_RELEVANCE_THRESHOLD = 0.15
 
 
 class ScopeBreadth(StrEnum):
@@ -213,13 +215,14 @@ def select_deep_review(
     screened: Iterable[ScreenedCandidate],
     budget: SearchBudget,
     *,
-    relevance_threshold: float = 0.15,
+    relevance_threshold: float = DEFAULT_RELEVANCE_THRESHOLD,
 ) -> DeepReviewSelection:
     eligible = [
         item
         for item in screened
         if item.date_status != "AFTER_EVALUATION_DATE"
         and item.relevance_score >= relevance_threshold
+        and normalize_publication_number(item.hit.publication_number) is not None
     ]
     selected = tuple(eligible[: budget.deep_review_target])
     limitation = None

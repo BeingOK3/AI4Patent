@@ -414,3 +414,14 @@
 - 测试：改动定向 47 项全部通过；新增 JSONL 追加/脱敏/路径约束测试；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q` 共 159 项全部通过；`compileall`、`node --check frontend/app.js`、`git diff --check` 通过。使用 `/tmp` 隔离数据库在 `127.0.0.1:8127` 启动真实 Uvicorn，首页三项输入和调试面板、OpenAPI 三项必填、调试路由、`runtime_required` 健康语义均通过，随后正常停机且未调用外部模型。
 - 提交主题：`feat(idea): [IDEA-UXOBS-001] add runtime config and live debug UX`
 - 已知限制：调试面板展示安全摘要而非完整 Prompt/模型全文，这是防止凭证和大文本泄漏的有意边界；旧三档历史报告只做 UI 兼容折算，不改写原报告或 Manifest。
+
+## 2026-07-16 — IDEA-FETCH-001
+
+- 类型：最新失败 Run 日志诊断、深读标识门禁与并发取消修复。
+- 现场证据：Run `4fc955d7-5580-4220-aa4a-fb02b0d0c015` 在 `NORMALIZE_AND_FETCH` 连续三次以 `KeyError('')` 失败；其 `RETRIEVE_CANDIDATES` 检查点的 15 个深读值中包含一个空公开号。失败后同批抓取协程未被 `asyncio.gather` 自动取消，三次 attempt 形成重叠请求，部分 Tool Call 在 Run 已进入 FAILED 后仍继续完成。
+- 根因：检索结果允许仅以 URL 建立可追踪身份，但旧深读选择直接用 `publication_number or ""` 生成抓取队列；抓取阶段又以空字符串索引只包含非空公开号的候选字典。并发聚合抛出该异常时没有显式取消和回收兄弟任务。
+- 修复：摘要筛选保留 URL-only 候选，但深读选择只接收可标准化公开号并写入中文限制；抓取入口重新标准化、去重并校验旧检查点，空值、重复值和无法回指候选的值均安全跳过并显式留痕；任何内部异常都会取消并等待同批所有任务后再抛出，避免跨 attempt 泄漏。
+- 涉及文件：`backend/idea/search_strategy.py`、`backend/idea/retrieval.py`、`backend/tests/test_retrieval.py`、`docs/idea-rebuild-technical-design.md`、`docs/development-log.md`。
+- 测试：新增 URL-only 相关候选、旧检查点空值/重复值、内部异常取消兄弟任务三项回归；检索与筛选定向 15 项全部通过；真实 Linux 网络命名空间下完整 162 项全部通过。
+- 提交主题：`fix(idea): [IDEA-FETCH-001] harden deep-review fetch queue`
+- 历史语义：原失败 Run 和日志保持不可变作为缺陷证据；修复后的重跑会创建新 Run，不改写旧终态。

@@ -26,7 +26,7 @@ from .providers import (
 )
 from .runtime_debug import RunDebugLog
 from .search_strategy import (
-    DeepReviewSelection,
+    DEFAULT_RELEVANCE_THRESHOLD,
     RoundStats,
     SaturationTracker,
     ScreenedCandidate,
@@ -194,6 +194,21 @@ class RetrievalService:
             term_groups=term_groups,
         )
         selection = select_deep_review(screened, budget)
+        unidentifiable_count = sum(
+            1
+            for item in screened
+            if item.date_status != "AFTER_EVALUATION_DATE"
+            and item.relevance_score >= DEFAULT_RELEVANCE_THRESHOLD
+            and normalize_publication_number(item.hit.publication_number) is None
+        )
+        if unidentifiable_count:
+            limitations.append(
+                {
+                    "code": "DEEP_REVIEW_IDENTIFIER_MISSING",
+                    "count": unidentifiable_count,
+                    "message": "部分相关候选缺少可核验的专利公开号，已排除在全文深读之外。",
+                }
+            )
         if selection.limitation:
             limitations.append(selection.limitation)
         for provider, counts in provider_counts.items():
@@ -214,9 +229,17 @@ class RetrievalService:
         return RetrievalResult(
             merged_hits=merged,
             screened=screened,
-            selected_publication_numbers=[
-                item.hit.publication_number or "" for item in selection.selected
-            ],
+            selected_publication_numbers=list(
+                dict.fromkeys(
+                    publication
+                    for item in selection.selected
+                    if (
+                        publication := normalize_publication_number(
+                            item.hit.publication_number
+                        )
+                    )
+                )
+            ),
             provider_calls={name: dict(counts) for name, counts in provider_counts.items()},
             stop_reason=stop_reason,
             limitations=limitations,
@@ -231,11 +254,56 @@ class RetrievalService:
         language: str = "en",
         minimum_documents: int = 10,
     ) -> FetchResult:
-        by_publication = {
-            hit.publication_number: hit
-            for hit in retrieval.merged_hits
-            if hit.publication_number
-        }
+        by_publication = {}
+        for hit in retrieval.merged_hits:
+            publication = normalize_publication_number(hit.publication_number)
+            if publication and publication not in by_publication:
+                by_publication[publication] = hit
+
+        selected_publications = []
+        invalid_count = 0
+        duplicate_count = 0
+        missing_publications = []
+        seen_publications = set()
+        for raw_publication in retrieval.selected_publication_numbers:
+            publication = normalize_publication_number(raw_publication)
+            if publication is None:
+                invalid_count += 1
+                continue
+            if publication in seen_publications:
+                duplicate_count += 1
+                continue
+            seen_publications.add(publication)
+            if publication not in by_publication:
+                missing_publications.append(publication)
+                continue
+            selected_publications.append(publication)
+
+        limitations = []
+        if invalid_count:
+            limitations.append(
+                {
+                    "code": "DEEP_REVIEW_IDENTIFIER_MISSING",
+                    "count": invalid_count,
+                    "message": "部分深读候选缺少有效专利公开号，已安全跳过。",
+                }
+            )
+        if duplicate_count:
+            limitations.append(
+                {
+                    "code": "DUPLICATE_DEEP_REVIEW_SELECTION",
+                    "count": duplicate_count,
+                    "message": "重复的深读公开号已合并，仅抓取一次。",
+                }
+            )
+        if missing_publications:
+            limitations.append(
+                {
+                    "code": "DEEP_REVIEW_CANDIDATE_NOT_FOUND",
+                    "publication_numbers": missing_publications,
+                    "message": "部分深读公开号无法在本次候选集中定位，已安全跳过。",
+                }
+            )
         semaphore = asyncio.Semaphore(self.fetch_concurrency)
         provider_priority = sorted(
             self.providers,
@@ -261,14 +329,21 @@ class RetrievalService:
                     run_id, publication, hit.urls, language, providers=provider_priority
                 )
 
-        outcomes = await asyncio.gather(
-            *[fetch_one(publication) for publication in retrieval.selected_publication_numbers]
-        )
+        tasks = [
+            asyncio.create_task(fetch_one(publication))
+            for publication in selected_publications
+        ]
+        try:
+            outcomes = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         documents = []
         document_ids = {}
-        limitations = []
         for publication, (document, failures) in zip(
-            retrieval.selected_publication_numbers, outcomes, strict=True
+            selected_publications, outcomes, strict=True
         ):
             if document is None:
                 limitations.append(

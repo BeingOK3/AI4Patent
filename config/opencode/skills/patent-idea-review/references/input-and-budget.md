@@ -4,7 +4,7 @@
 
 Prefer text that states the application scenario, objective technical problem, necessary structures or processing steps, relationships/order/conditions/data flow between those means, and claimed technical effect.
 
-Do not add missing implementation details. The parser labels features as explicit, normalized, or inferred and preserves exact source spans for explicit text.
+Do not add missing implementation details. The parser labels features as explicit, normalized, or inferred and copies exact source text for explicit features. The backend deterministically resolves and verifies Unicode offsets; a quote absent from the input remains a hard failure.
 
 ## Budget semantics
 

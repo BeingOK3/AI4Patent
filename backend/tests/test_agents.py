@@ -113,6 +113,25 @@ class IdeaAgentServiceTests(unittest.TestCase):
             count = connection.execute("SELECT COUNT(*) FROM idea_features").fetchone()[0]
         self.assertEqual(count, 0)
 
+    def test_exact_quote_repairs_incorrect_unicode_offsets_before_persistence(self) -> None:
+        service = IdeaAgentService(
+            self.db, StubModel([parser_output(text="缓存调度", start=2, end=6)])
+        )
+        result = asyncio.run(service.parse_idea(self.run["run_id"], "缓存调度方法"))
+        span = result.features[0].source_span
+        self.assertEqual((span.start, span.end, span.text), (0, 4, "缓存调度"))
+        with self.db.connect() as connection:
+            row = connection.execute(
+                "SELECT source_start,source_end FROM idea_features"
+            ).fetchone()
+        self.assertEqual((row["source_start"], row["source_end"]), (0, 4))
+
+    def test_repeated_quote_uses_occurrence_nearest_to_proposed_offset(self) -> None:
+        output = parser_output(text="缓存", start=6, end=8)
+        resolved = IdeaAgentService._resolve_source_spans("缓存调度与缓存隔离", output)
+        span = resolved.features[0].source_span
+        self.assertEqual((span.start, span.end), (5, 7))
+
     def test_valid_query_plan_persists_qualified_query_ids(self) -> None:
         idea = parser_output()
         service = IdeaAgentService(self.db, StubModel([planner_output()]))

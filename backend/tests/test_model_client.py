@@ -123,6 +123,21 @@ class StructuredModelClientTests(unittest.TestCase):
         self.assertEqual(len(payloads[1]["messages"]), 4)
         self.assertIn("failed validation", payloads[1]["messages"][-1]["content"])
 
+    def test_empty_assistant_content_is_retried_as_structured_failure(self) -> None:
+        responses = ["", json.dumps(valid_parser_output())]
+
+        async def transport(payload, headers):
+            return {"choices": [{"message": {"content": responses.pop(0)}}]}
+
+        result = asyncio.run(
+            StructuredModelClient(self.settings, transport=transport).complete(
+                "patent-idea-parser",
+                system_prompt="Parse.",
+                input_payload={"idea": "cache"},
+            )
+        )
+        self.assertEqual(result.attempts, 2)
+
     def test_schema_invalid_output_exhausts_retry_without_leaking_key(self) -> None:
         async def transport(payload, headers):
             return {"choices": [{"message": {"content": "{}"}}]}

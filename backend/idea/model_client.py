@@ -198,7 +198,13 @@ class StructuredModelClient:
                     },
                     response_id=response.get("id"),
                 )
-            except (json.JSONDecodeError, ValidationError, ValueError, TypeError) as exc:
+            except (
+                json.JSONDecodeError,
+                ValidationError,
+                ValueError,
+                TypeError,
+                ModelClientError,
+            ) as exc:
                 errors.append(f"{type(exc).__name__}: {str(exc)[:400]}")
                 if attempt >= total_attempts:
                     break

@@ -437,3 +437,14 @@
 - 测试：数据库、模型客户端、前端、创造性、价值和审计定向 33 项通过；IDEA API 12 项通过；真实 Linux 环境完整 165 项通过；`node --check frontend/app.js`、`compileall` 和 `git diff --check` 通过。
 - 提交主题：`feat(idea): [IDEA-HISTORY-I18N-001] clarify cases and enforce Chinese output`
 - 迁移说明：既有重名 Case 不改写、不合并；短 Case ID 保证可辨识。唯一标题规则只约束之后的新建 Case。
+
+## 2026-07-16 — IDEA-PARSE-001
+
+- 类型：最新失败 Run 日志复盘、Unicode source span 确定性修复与空模型响应重试。
+- 现场证据：Run `553efc45-9909-4cea-83dd-9139b268e6c5` 仅执行到 `PARSE_IDEA`。attempt 1 和 2 的 DeepSeek 调用均返回并通过结构化 Schema，但分别被后置校验以 `feature span does not match input: F6/F1` 拒绝；attempt 3 收到 HTTP 200 的空 assistant content，最终终态只显示 `ModelClientError: model assistant content is empty`，掩盖了前两个主要失败。
+- 根因：旧 Prompt 要求模型精确计算中文 Unicode 零基字符 offset，且后端把 offset 作为权威值直接切片校验；模型引用文字可能正确，但偏移计数不可靠。空 assistant content 又没有进入结构化重试分支，直接消耗完整 Workflow attempt。
+- 修复：`explicit` 特征的逐字引用文本改为权威依据，后端查找所有精确出现位置并选择最接近模型建议 offset 的位置，确定性回填 start/end；原文不存在或引用为空仍严格失败，不做模糊匹配。同一 Agent 调用中的空 assistant content 现在作为结构化验证错误自动重试，耗尽后才上升到 Workflow。
+- 涉及文件：`backend/idea/agents.py`、`backend/idea/model_client.py`、`backend/tests/test_agents.py`、`backend/tests/test_model_client.py`、技术设计、Skill 输入参考和开发日志。
+- 测试：新增错误中文偏移修正、重复引用就近消歧、空 assistant content 内部重试三项回归；Parser/模型/执行器定向 20 项通过；真实 Linux 环境完整 168 项通过；`compileall` 和 `git diff --check` 通过。
+- 提交主题：`fix(idea): [IDEA-PARSE-001] resolve source spans deterministically`
+- 历史语义：原失败 Run 和完整 attempt/tool-call 日志保持不变；重跑会创建新 Run，并使用修复后的解析规则。

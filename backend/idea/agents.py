@@ -16,8 +16,9 @@ IDEA_PARSER_PROMPT = """
 You are patent-idea-parser. Parse only the supplied invention text. Identify the technical
 domains, application scenario, objective technical problem, claimed effects, subject types,
 and a complete ordered F1..Fn list of required technical features. Mark directly quoted or
-faithfully extracted features as explicit and provide exact zero-based character start/end
-offsets whose text exactly equals the input slice. Mark normalization and inference honestly.
+faithfully extracted features as explicit and copy their source text exactly from the input.
+Provide best-effort zero-based start/end offsets; the backend resolves the exact occurrence from
+the quoted source text. Mark normalization and inference honestly.
 Do not search, assess novelty, cite patents, or invent missing implementation details.
 """
 
@@ -63,7 +64,7 @@ class IdeaAgentService:
         output = result.output
         if not isinstance(output, IdeaParserOutput):
             raise AgentExecutionError("idea parser returned wrong validated model")
-        self._validate_source_spans(idea_text, output)
+        output = self._resolve_source_spans(idea_text, output)
         with self.database.connect() as connection:
             existing = connection.execute(
                 "SELECT COUNT(*) FROM idea_features WHERE run_id = ?", (run_id,)
@@ -261,15 +262,33 @@ class IdeaAgentService:
         return result
 
     @staticmethod
-    def _validate_source_spans(idea_text: str, output: IdeaParserOutput) -> None:
+    def _resolve_source_spans(
+        idea_text: str, output: IdeaParserOutput
+    ) -> IdeaParserOutput:
+        resolved_features = []
         for feature in output.features:
             span = feature.source_span
             if span is None:
+                resolved_features.append(feature)
                 continue
-            if span.end > len(idea_text):
-                raise AgentExecutionError(f"feature span outside input: {feature.feature_id}")
-            if idea_text[span.start : span.end] != span.text:
+            if not span.text:
+                raise AgentExecutionError(f"feature span text is empty: {feature.feature_id}")
+            if span.end <= len(idea_text) and idea_text[span.start : span.end] == span.text:
+                resolved_features.append(feature)
+                continue
+            occurrences = []
+            occurrence = idea_text.find(span.text)
+            while occurrence >= 0:
+                occurrences.append(occurrence)
+                occurrence = idea_text.find(span.text, occurrence + 1)
+            if not occurrences:
                 raise AgentExecutionError(f"feature span does not match input: {feature.feature_id}")
+            start = min(occurrences, key=lambda index: (abs(index - span.start), index))
+            resolved_span = span.model_copy(
+                update={"start": start, "end": start + len(span.text)}
+            )
+            resolved_features.append(feature.model_copy(update={"source_span": resolved_span}))
+        return output.model_copy(update={"features": resolved_features})
 
     @staticmethod
     def _persist_stage_result(connection, run_id: str, stage_name: str, value: dict) -> None:

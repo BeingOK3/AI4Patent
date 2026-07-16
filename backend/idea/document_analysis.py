@@ -17,8 +17,10 @@ from .providers import FetchedDocument
 DOCUMENT_ANALYZER_PROMPT = """
 You are patent-document-analyzer. Analyze exactly one patent against the supplied F1..Fn.
 Use only the supplied evidence packet. Every DISCLOSED or PARTIAL mapping must cite one or more
-provided evidence IDs; never create an ID. Map every required feature exactly once. Explain the
+provided evidence aliases (E1, E2, ...); never create an alias. Map every required feature exactly
+once. Explain the
 document's technical problem, solution, effect, scenario and independent claim in plain language.
+Copy the supplied publication_number exactly into the output; it is an identifier, not content to infer.
 Do not decide overall novelty or combine this document with another document.
 """
 
@@ -70,7 +72,16 @@ class DocumentAnalysisService:
                 )
                 return document.publication_number, output
 
-        results = await asyncio.gather(*(analyze(document) for document in documents))
+        tasks = [asyncio.create_task(analyze(document)) for document in documents]
+        try:
+            results = await asyncio.gather(*tasks)
+        except BaseException:
+            # asyncio.gather does not cancel sibling tasks when one fails.  A workflow
+            # retry must not overlap the previous attempt or write late results.
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         return dict(results)
 
     async def analyze(
@@ -87,6 +98,9 @@ class DocumentAnalysisService:
                 f"document has no usable evidence spans: {document.publication_number}"
             )
         self._persist_evidence(run_id, document_id, packet)
+        evidence_aliases = {
+            f"E{index}": item.evidence_id for index, item in enumerate(packet, start=1)
+        }
         result = await self.agents.call_agent(
             run_id,
             "patent-document-analyzer",
@@ -107,17 +121,26 @@ class DocumentAnalysisService:
                     }
                     for feature in idea.features
                 ],
-                "evidence": [item.__dict__ for item in packet],
+                "evidence": [
+                    {**item.__dict__, "evidence_id": alias}
+                    for alias, item in zip(evidence_aliases, packet, strict=True)
+                ],
             },
             input_size=sum(len(item.text) for item in packet),
         )
         output = result.output
         if not isinstance(output, DocumentAnalyzerOutput):
             raise AgentExecutionError("document analyzer returned wrong validated model")
+        output = self._resolve_evidence_aliases(output, evidence_aliases)
         if self._identifier(output.publication_number) != self._identifier(
             document.publication_number
         ):
-            raise AgentExecutionError("document analyzer publication number mismatch")
+            # The number is immutable request metadata.  Evidence IDs below still
+            # prove that the analysis used this document's packet, so correct a bad
+            # model echo instead of discarding an otherwise valid analysis.
+            output = output.model_copy(
+                update={"publication_number": document.publication_number}
+            )
         expected_features = {feature.feature_id for feature in idea.features if feature.required}
         actual_features = {mapping.feature_id for mapping in output.feature_mappings}
         if actual_features != expected_features:
@@ -136,6 +159,33 @@ class DocumentAnalysisService:
         self._persist_analysis(run_id, document_id, output)
         self._release_rebuildable_text(document_id)
         return output
+
+    @staticmethod
+    def _resolve_evidence_aliases(
+        output: DocumentAnalyzerOutput, aliases: dict[str, str]
+    ) -> DocumentAnalyzerOutput:
+        """Translate unambiguous model-facing E1 aliases to durable evidence IDs."""
+
+        resolved_mappings = []
+        durable_ids = set(aliases.values())
+        for mapping in output.feature_mappings:
+            resolved = []
+            for evidence_id in mapping.evidence_ids:
+                if evidence_id in durable_ids:
+                    durable_id = evidence_id
+                else:
+                    normalized = "".join(
+                        character for character in evidence_id.upper() if character.isalnum()
+                    )
+                    durable_id = aliases.get(normalized)
+                if durable_id is None:
+                    # Preserve the bad value so the existing strict validator emits
+                    # a useful error instead of silently dropping a citation.
+                    durable_id = evidence_id
+                if durable_id not in resolved:
+                    resolved.append(durable_id)
+            resolved_mappings.append(mapping.model_copy(update={"evidence_ids": resolved}))
+        return output.model_copy(update={"feature_mappings": resolved_mappings})
 
     def build_evidence_packet(
         self,
@@ -301,6 +351,17 @@ class DocumentAnalysisService:
         business database retains metadata, the full-content hash, and cited evidence.
         """
         with self.database.connect() as connection:
+            pending = connection.execute(
+                """SELECT 1 FROM run_documents rd
+                JOIN idea_runs r ON r.run_id = rd.run_id
+                WHERE rd.document_id = ? AND rd.deep_reviewed = 0
+                  AND r.status IN ('QUEUED','RUNNING') LIMIT 1""",
+                (document_id,),
+            ).fetchone()
+            if pending is not None:
+                # patent_documents are shared by every run.  Clearing the text while
+                # another run is still reviewing the same row corrupts that run.
+                return
             row = connection.execute(
                 "SELECT metadata_json FROM patent_documents WHERE document_id = ?",
                 (document_id,),

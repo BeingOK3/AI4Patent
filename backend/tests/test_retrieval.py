@@ -163,6 +163,20 @@ class RetrievalServiceTests(unittest.TestCase):
         self.assertEqual(documents, 10)
         self.assertEqual(run_documents, 10)
 
+    def test_fetch_below_minimum_has_user_facing_limitation_message(self) -> None:
+        service, result = self.retrieve([FakeProvider("exa_mcp")])
+
+        fetched = asyncio.run(service.fetch_selected(
+            run_id=self.run["run_id"], retrieval=result, minimum_documents=11
+        ))
+
+        limitation = next(
+            item for item in fetched.limitations
+            if item["code"] == "DEEP_REVIEW_FETCHED_BELOW_MINIMUM"
+        )
+        self.assertEqual(limitation["fetched"], 10)
+        self.assertIn("结论将明确降级", limitation["message"])
+
     def test_fetch_prioritizes_provider_that_succeeded_during_this_run(self) -> None:
         local = FakeProvider("google_patents_local", fail_search=True)
         exa = FakeProvider("exa_mcp")

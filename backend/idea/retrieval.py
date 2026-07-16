@@ -363,6 +363,10 @@ class RetrievalService:
                     "code": "DEEP_REVIEW_FETCHED_BELOW_MINIMUM",
                     "required": minimum_documents,
                     "fetched": len(documents),
+                    "message": (
+                        f"仅成功获取 {len(documents)} 篇可深度核验全文，"
+                        f"低于配置下限 {minimum_documents} 篇；后续结论将明确降级。"
+                    ),
                 }
             )
         return FetchResult(

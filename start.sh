@@ -13,7 +13,7 @@ fi
 
 mkdir -p "$ROOT/logs" "$ROOT/workspace/uploads" "$ROOT/data/opencode"
 READY_URL="http://127.0.0.1:$PORT/openapi.json"
-if curl --fail --silent --max-time 2 "$READY_URL" >/dev/null; then
+if curl --noproxy "*" --fail --silent --max-time 2 "$READY_URL" >/dev/null; then
     echo "服务已在运行：http://localhost:$PORT"
 else
     echo "启动服务..."
@@ -22,7 +22,7 @@ else
     echo $! > "$PID_FILE"
     ready=false
     for _ in {1..20}; do
-        if curl --fail --silent --max-time 1 "$READY_URL" >/dev/null; then
+        if curl --noproxy "*" --fail --silent --max-time 1 "$READY_URL" >/dev/null; then
             ready=true
             break
         fi

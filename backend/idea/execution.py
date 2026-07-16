@@ -226,10 +226,9 @@ class WorkflowExecutor:
                 retrieval=retrieval,
                 minimum_documents=self._budget(run_id, self._idea(run_id)).deep_review_min,
             )
-            minimum = self._budget(run_id, self._idea(run_id)).deep_review_min
-            if len(output.documents) < minimum:
+            if not output.documents:
                 raise ExecutionGateError(
-                    f"full-text deep review minimum not met: required={minimum} fetched={len(output.documents)}"
+                    "no patent full text is available for evidence-based analysis"
                 )
             value = {
                 "publication_numbers": [item.publication_number for item in output.documents],

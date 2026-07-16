@@ -113,6 +113,11 @@ class ReportingTests(unittest.TestCase):
         markdown = paths.report_md.read_text(encoding="utf-8")
         for number in range(1, 15):
             self.assertIn(f"## {number}.", markdown)
+        self.assertIn("[US123456A1](https://patents.google.com/patent/US123456A1)", markdown)
+        self.assertIn("- 申请建议：建议申请", markdown)
+        self.assertIn("- 可取证性：3/5", markdown)
+        self.assertIn("- 严重：0", markdown)
+        self.assertNotIn("- Critical：", markdown)
         self.store.verify(self.run["case_id"], self.run_id)
         with self.db.connect() as connection:
             row = connection.execute("SELECT * FROM reports WHERE run_id = ?", (self.run_id,)).fetchone()

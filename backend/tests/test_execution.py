@@ -73,9 +73,11 @@ class FakeAgents:
 
 
 class FakeRetrieval:
-    def __init__(self, fail_once=False):
+    def __init__(self, fail_once=False, document_count=10):
         self.retrieve_calls = 0
+        self.fetch_calls = 0
         self.fail_once = fail_once
+        self.document_count = document_count
 
     async def retrieve(self, **kwargs):
         self.retrieve_calls += 1
@@ -87,6 +89,7 @@ class FakeRetrieval:
         )
 
     async def fetch_selected(self, **kwargs):
+        self.fetch_calls += 1
         documents = [
             FetchedDocument(
                 provider="fixture",
@@ -94,12 +97,19 @@ class FakeRetrieval:
                 url=f"https://patents.google.com/patent/US{index}A1/en",
                 claims_text="1. fixture claim",
             )
-            for index in range(1, 11)
+            for index in range(1, self.document_count + 1)
         ]
+        limitations = []
+        if self.document_count < kwargs["minimum_documents"]:
+            limitations.append({
+                "code": "DEEP_REVIEW_FETCHED_BELOW_MINIMUM",
+                "required": kwargs["minimum_documents"],
+                "fetched": self.document_count,
+            })
         return FetchResult(
             documents=documents,
             document_ids={item.publication_number: f"doc-{index}" for index, item in enumerate(documents)},
-            limitations=[],
+            limitations=limitations,
         )
 
 
@@ -242,6 +252,21 @@ class WorkflowExecutorTests(unittest.TestCase):
                 (run["run_id"],),
             ).fetchone()[0]
         self.assertEqual(attempts, 2)
+
+    def test_partial_deep_review_continues_once_with_explicit_limitation(self) -> None:
+        run = self.create_run()
+        retrieval = FakeRetrieval(document_count=4)
+        executor = self.executor(run, retrieval=retrieval)
+
+        status = asyncio.run(executor.execute(run["run_id"]))
+
+        self.assertEqual(status, "COMPLETED_WITH_LIMITATIONS")
+        self.assertEqual(retrieval.fetch_calls, 1)
+        stored = self.db.get_run(run["run_id"])
+        self.assertIn(
+            "DEEP_REVIEW_FETCHED_BELOW_MINIMUM",
+            {item["code"] for item in stored["limitation_json"]},
+        )
 
     def test_report_limitations_produce_completed_with_limitations_terminal_state(self) -> None:
         run = self.create_run()

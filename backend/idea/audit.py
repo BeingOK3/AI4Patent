@@ -23,6 +23,9 @@ language reasonably supports the associated mapping and whether conclusion wordi
 the supplied evidence. Do not change conclusions, search, invent an ID, or omit an inventory
 item. Return exactly all supplied evidence IDs and publication numbers in the checked lists.
 Only output issues; programmatic integrity checks remain authoritative.
+The value_result.evidence_basis entries (IDEA:*, EFFECT:*, NOVELTY:CONCLUSION and INVENTIVE:*)
+are logical basis IDs supplied to the value agent. They are not patent evidence IDs and must not
+be compared with evidence_inventory or reported as missing evidence.
 All issue messages intended for the user must be written in Simplified Chinese.
 """
 

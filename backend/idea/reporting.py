@@ -29,6 +29,17 @@ PUBLICATION_PATTERN = re.compile(
     r"\b(?:CN|US|EP|WO|JP|KR)\s*[-/]?\s*\d{5,}[A-Z0-9]*\b", re.IGNORECASE
 )
 
+JUDGMENT_LABELS = {
+    "FILE": "建议申请",
+    "ADJUST_THEN_FILE": "调整后申请",
+    "WATCH": "继续观察",
+    "DO_NOT_FILE": "不建议申请",
+    "INVENTIVE": "具备创造性",
+    "NOT_INVENTIVE": "不具备创造性",
+    "NEED_MORE_EVIDENCE": "需要更多证据",
+    "UNCERTAIN": "结论不确定",
+}
+
 
 class ReportService:
     def __init__(self, database: Database, run_store: RunStore, agents: IdeaAgentService):
@@ -390,7 +401,7 @@ class ReportService:
             overview["executive_summary"],
             "",
             f"- 新颖性：{overview['novelty_label']}（置信度 {overview['novelty_confidence']:.2f}）",
-            f"- 申请建议：{overview['filing_recommendation']}",
+            f"- 申请建议：{ReportService._judgment_label(overview['filing_recommendation'])}",
             "",
             "## 2. IDEA 技术特征",
             "",
@@ -410,38 +421,43 @@ class ReportService:
             "", "## 6. 候选文献列表", "",
         ])
         lines.extend(
-            f"- {item.get('publication_number') or '未标准化'}：{item.get('title') or '无标题'}"
+            f"- {ReportService._publication_link(item.get('publication_number'))}：{item.get('title') or '无标题'}"
             for item in report["candidate_documents"]
         )
         if not report["candidate_documents"]:
             lines.append("- 无持久化候选记录。")
         lines.extend(["", "## 7. 深度核验文献", ""])
         lines.extend(
-            f"- {item['publication_number']}：{item.get('title') or '无标题'}"
+            f"- {ReportService._publication_link(item['publication_number'])}：{item.get('title') or '无标题'}"
             for item in report["deep_review_documents"]
         )
         if not report["deep_review_documents"]:
             lines.append("- 无深度核验文献。")
         lines.extend([
             "", "## 8. 新颖性矩阵和结论", "", novelty["rationale"], "",
-            f"- 最接近文献：{novelty['closest_publication_number']}",
+            f"- 最接近文献：{ReportService._publication_link(novelty['closest_publication_number'])}",
             f"- 未披露特征：{', '.join(novelty['missing_features']) or '无'}",
             "", "## 9. 创造性多 D1 路线", "",
         ])
         lines.extend(
-            f"- {route['route_id']} / {route['d1_publication_number']}：{route['status']}"
+            f"- {route['route_id']} / {ReportService._publication_link(route['d1_publication_number'])}：{ReportService._judgment_label(route['status'])}"
             for route in report["inventiveness"]
         )
         if not report["inventiveness"]:
             lines.append("- 新颖性已被破坏时，本节不适用。")
         value = report["value_assessment"]
         lines.extend([
-            "", "## 10. 价值预评估", "", value["rationale"],
+            "", "## 10. 价值预评估", "",
+            f"- 可取证性：{value['detectability']['rating']}/5 — {value['detectability']['rationale']}",
+            f"- 规避难度：{value['workaround_difficulty']['rating']}/5 — {value['workaround_difficulty']['rationale']}",
+            f"- 技术与市场价值：{value['technical_market_value']['rating']}/5 — {value['technical_market_value']['rationale']}",
+            f"- 申请建议：{ReportService._judgment_label(value['recommendation'])}",
+            "", value["rationale"],
             "", "## 11. 模拟审查意见", "", report["simulated_office_action"],
             "", "## 12. 证据审计", "",
-            f"- Critical：{report['audit']['counts']['critical']}",
-            f"- Warning：{report['audit']['counts']['warning']}",
-            f"- Info：{report['audit']['counts']['info']}",
+            f"- 严重：{report['audit']['counts']['critical']}",
+            f"- 警告：{report['audit']['counts']['warning']}",
+            f"- 信息：{report['audit']['counts']['info']}",
             "", "## 13. 局限性", "",
         ])
         lines.extend(f"- {item.get('message', item)}" for item in report["limitations"])
@@ -455,6 +471,17 @@ class ReportService:
             f"- Workflow：{provenance['workflow_version']}", "",
         ])
         return "\n".join(lines)
+
+    @staticmethod
+    def _judgment_label(value: str) -> str:
+        return JUDGMENT_LABELS.get(value, value)
+
+    @staticmethod
+    def _publication_link(value: str | None) -> str:
+        if not value:
+            return "未标准化"
+        identifier = ReportService._identifier(value)
+        return f"[{identifier}](https://patents.google.com/patent/{identifier})"
 
     def _persist_report(self, run: dict[str, Any], manifest: dict[str, Any]) -> None:
         paths = self.run_store.paths(run["case_id"], run["run_id"])

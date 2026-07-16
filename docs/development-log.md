@@ -448,3 +448,15 @@
 - 测试：新增错误中文偏移修正、重复引用就近消歧、空 assistant content 内部重试三项回归；Parser/模型/执行器定向 20 项通过；真实 Linux 环境完整 168 项通过；`compileall` 和 `git diff --check` 通过。
 - 提交主题：`fix(idea): [IDEA-PARSE-001] resolve source spans deterministically`
 - 历史语义：原失败 Run 和完整 attempt/tool-call 日志保持不变；重跑会创建新 Run，并使用修复后的解析规则。
+
+## 2026-07-16 — IDEA-STABILITY-001
+
+- 类型：多 Run 并发真实压测、文献分析竞态修复、证据引用稳定化与深读不足降级。
+- 现场证据：Run `912de090-167e-458e-8b9d-d73011541835` 首次文献分析因模型公开号回显不一致失败；未取消的兄弟协程继续写库，重试随后读取到被另一并发 Run 清空的共享全文并以 `fetched document text is unavailable` 终止。Run `df6f1c96-5efa-4b71-92c8-a71aad2b7cdb` 同样因跨 attempt 后台写入而出现 `document analysis already exists for this run`。
+- 并发与共享状态修复：文献分析改为显式创建任务，任一异常时取消并等待所有兄弟任务；公开号按不可变输入元数据确定性恢复；共享 `patent_documents` 只有在没有其他待深读引用时才释放可重建全文，避免 Run 间互相破坏。
+- 证据引用修复：真实并发 Run `51b58bdc-a87c-458e-9a97-f1dd1b5c5ba6` 和 `da200454-e5cb-4b6f-83bb-32008c365461` 均完成 11/11 步，但文献 Agent 曾把长哈希 evidence ID 简写为 `E-1/E-5`，触发整批步骤重跑。模型输入现使用文档内短别名 `E1..En`，后端无歧义映射回真实哈希，未知编号仍严格拒绝。
+- 深读不足修复：随机 Run `a1f9ae86-8da2-4c92-8ac7-3fe29f8b800e` 只有 4 篇相关全文，旧硬门槛连续三次重复抓取后失败。流程现仅在零篇全文时失败；1–9 篇时继续审计并强制降低结论强度。相同输入重跑 `e4c638ab-c67e-4554-91e8-24befc0c8418` 完成 11/11 步、所有 Workflow 步骤均 attempt 1，以 2 篇深读得到 `UNCERTAIN / COMPLETED_WITH_LIMITATIONS`，没有伪装成肯定新颖性。
+- 报告与启动修复：Markdown 公开号改为安全链接，申请建议、创造性状态和审计等级使用中文，三个价值维度显示 `n/5`；深读不足限制补充中文说明；审计 Prompt 区分价值 basis ID 与专利 evidence ID；`start.sh` 本机 OpenAPI 探活强制绕过环境代理，避免服务已启动却误报失败。
+- 涉及文件：`backend/idea/document_analysis.py`、`execution.py`、`retrieval.py`、`audit.py`、`reporting.py`、`start.sh`、相关测试、技术设计和开发日志。
+- 测试：三组随机真实 DeepSeek/双 Provider Run，其中两组并发；前两组均 `COMPLETED_WITH_LIMITATIONS`，分别 33/37 次 Tool Call，第三组首次暴露深读硬门槛后按不可变历史保留；同输入修复后重跑 15 次 Tool Call、11/11 步一次通过。新增公开号回显、证据别名、兄弟任务取消、共享全文保留、深读降级、中文报告与限制消息回归；完整后端测试、`compileall`、Shell 语法和 `git diff --check` 通过。
+- 历史语义与凭证：所有失败和成功 Run 均保留，不修改历史报告；API Key 只进入获授权的测试进程，未写入配置、数据库、日志、文档或提交内容。

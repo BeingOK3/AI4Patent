@@ -165,6 +165,26 @@ class DocumentAnalysisTests(unittest.TestCase):
             mappings = connection.execute("SELECT COUNT(*) FROM feature_mappings").fetchone()[0]
         self.assertEqual(mappings, 0)
 
+    def test_model_facing_evidence_aliases_are_resolved_to_durable_ids(self) -> None:
+        probe = DocumentAnalysisService(self.db, IdeaAgentService(self.db, StubModel(None)))
+        packet = probe.build_evidence_packet(self.run["run_id"], self.document_id, idea(), document())
+        model = StubModel(self.output(["E-1", "e_2"]))
+        service = DocumentAnalysisService(self.db, IdeaAgentService(self.db, model))
+
+        result = asyncio.run(service.analyze(
+            run_id=self.run["run_id"], idea=idea(), document=document(), document_id=self.document_id
+        ))
+
+        self.assertEqual(result.feature_mappings[0].evidence_ids, [packet[0].evidence_id])
+        self.assertEqual(result.feature_mappings[1].evidence_ids, [packet[1].evidence_id])
+        self.assertEqual(model.payload["evidence"][0]["evidence_id"], "E1")
+        with self.db.connect() as connection:
+            stored = connection.execute(
+                "SELECT evidence_ids_json FROM feature_mappings ORDER BY rowid"
+            ).fetchall()
+        self.assertEqual(json.loads(stored[0]["evidence_ids_json"]), [packet[0].evidence_id])
+        self.assertEqual(json.loads(stored[1]["evidence_ids_json"]), [packet[1].evidence_id])
+
     def test_missing_required_feature_mapping_is_rejected(self) -> None:
         probe = DocumentAnalysisService(self.db, IdeaAgentService(self.db, StubModel(None)))
         packet = probe.build_evidence_packet(self.run["run_id"], self.document_id, idea(), document())
@@ -176,6 +196,86 @@ class DocumentAnalysisTests(unittest.TestCase):
             asyncio.run(service.analyze(
                 run_id=self.run["run_id"], idea=idea(), document=document(), document_id=self.document_id
             ))
+
+    def test_publication_number_echo_is_canonicalized(self) -> None:
+        probe = DocumentAnalysisService(self.db, IdeaAgentService(self.db, StubModel(None)))
+        packet = probe.build_evidence_packet(self.run["run_id"], self.document_id, idea(), document())
+        wrong_echo = self.output([packet[0].evidence_id, packet[1].evidence_id]).model_copy(
+            update={"publication_number": "invented-number"}
+        )
+        service = DocumentAnalysisService(self.db, IdeaAgentService(self.db, StubModel(wrong_echo)))
+
+        result = asyncio.run(service.analyze(
+            run_id=self.run["run_id"], idea=idea(), document=document(), document_id=self.document_id
+        ))
+
+        self.assertEqual(result.publication_number, "US1A1")
+
+    def test_shared_document_text_is_retained_while_another_run_is_pending(self) -> None:
+        second = self.db.create_run(
+            case_id=self.run["case_id"], input_text="second idea",
+            evaluation_date="2026-07-16", date_basis="default", analysis_scope="full",
+            model="stub", skill_version="1", workflow_version="1", config_snapshot={},
+        )
+        with self.db.connect() as connection:
+            connection.execute(
+                "INSERT INTO run_documents(run_id,document_id) VALUES(?,?)",
+                (second["run_id"], self.document_id),
+            )
+        probe = DocumentAnalysisService(self.db, IdeaAgentService(self.db, StubModel(None)))
+        packet = probe.build_evidence_packet(self.run["run_id"], self.document_id, idea(), document())
+        service = DocumentAnalysisService(
+            self.db,
+            IdeaAgentService(self.db, StubModel(self.output([packet[0].evidence_id, packet[1].evidence_id]))),
+        )
+
+        asyncio.run(service.analyze(
+            run_id=self.run["run_id"], idea=idea(), document=document(), document_id=self.document_id
+        ))
+
+        with self.db.connect() as connection:
+            retained = connection.execute(
+                "SELECT abstract_text,claims_text,description_text FROM patent_documents WHERE document_id = ?",
+                (self.document_id,),
+            ).fetchone()
+        self.assertTrue(retained["abstract_text"])
+        self.assertTrue(retained["claims_text"])
+        self.assertTrue(retained["description_text"])
+
+        self.db.set_run_status(second["run_id"], "CANCELLED")
+        service._release_rebuildable_text(self.document_id)
+        with self.db.connect() as connection:
+            released = connection.execute(
+                "SELECT abstract_text,claims_text,description_text FROM patent_documents WHERE document_id = ?",
+                (self.document_id,),
+            ).fetchone()
+        self.assertIsNone(released["abstract_text"])
+        self.assertIsNone(released["claims_text"])
+        self.assertIsNone(released["description_text"])
+
+    def test_analyze_many_cancels_siblings_after_failure(self) -> None:
+        cancelled = asyncio.Event()
+
+        class FailingService(DocumentAnalysisService):
+            async def analyze(self, *, document, **kwargs):
+                if document.publication_number == "FAIL":
+                    raise AgentExecutionError("first document failed")
+                try:
+                    await asyncio.sleep(60)
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+
+        failing = document().model_copy(update={"publication_number": "FAIL"})
+        waiting = document().model_copy(update={"publication_number": "WAIT"})
+        service = FailingService(self.db, IdeaAgentService(self.db, StubModel(None)), concurrency=2)
+
+        with self.assertRaisesRegex(AgentExecutionError, "first document failed"):
+            asyncio.run(service.analyze_many(
+                run_id=self.run["run_id"], idea=idea(), documents=[failing, waiting],
+                document_ids={"FAIL": "doc-fail", "WAIT": "doc-wait"},
+            ))
+        self.assertTrue(cancelled.is_set())
 
 
 if __name__ == "__main__":

@@ -287,6 +287,7 @@ class WorkflowExecutor:
                 {
                     "report_schema_version": report["schema_version"],
                     "audit_counts": report["audit"]["counts"],
+                    "limitations": report.get("limitations", []),
                 },
             )
         raise ExecutionGateError(f"unsupported Workflow step: {step}")
@@ -499,7 +500,11 @@ class WorkflowExecutor:
 
     def _collect_run_limitations(self, run_id: str) -> list[dict[str, Any]]:
         limitations = []
-        for stage in ("RETRIEVE_CANDIDATES", "NORMALIZE_AND_FETCH"):
+        for stage in (
+            "RETRIEVE_CANDIDATES",
+            "NORMALIZE_AND_FETCH",
+            "AUDIT_AND_REPORT",
+        ):
             checkpoint = self.database.get_stage_result(run_id, stage)
             if checkpoint:
                 limitations.extend(checkpoint["value"].get("limitations", []))

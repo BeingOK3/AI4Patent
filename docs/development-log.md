@@ -369,3 +369,19 @@
 - 测试：`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q`，148 项全部通过；Skill quick validate、`compileall`、配置/Schema JSON、4 个 shell 脚本语法、`git diff --check` 全部通过；`start.sh → 首页/API 历史 → stop.sh` 真实部署冒烟通过且无残留服务。
 - 提交主题：`feat(idea): [IDEA-E2E-001] harden live retrieval and finish IDEA`
 - 已知限制：本机当前无法直连 Google Patents，因此成功 Run 为 EXA 单路在线降级状态；本地 Provider 已实现但不是离线镜像。FastAPI 测试仍提示 Starlette `httpx` 兼容层弃用警告，不影响本次 148 项结果，后续依赖升级需单独处理。
+
+## 2026-07-16 — IDEA-TESTENV-001
+
+- 类型：当前 Linux 环境复验、测试依赖修复、健康门禁与在线终态语义回归。
+- 目标：依据 README、技术设计和追加日志重新验证整个 IDEA 项目，修复依赖升级后未完成的 API 测试、统一健康配置偏差，以及真实报告包含限制但 Run 误报 `COMPLETED` 的缺陷。
+- 环境修复：当前虚拟环境为 Python 3.12.3、FastAPI 0.139.0、Starlette 1.3.1；新版 Starlette `TestClient` 需要 `httpx2`，旧 `httpx` 兼容层在受限沙箱内会卡死。`backend/requirements.txt` 新增 `httpx2>=2.0`，真实 Linux 环境中的 API 测试恢复正常；README 的 Skill 校验路径改为可移植 `CODEX_HOME`/用户目录形式。
+- 健康修复：OpenCode 路径按 `OPENCODE_EXE`、系统 PATH、项目 Linux 路径解析，并作为 IDEA-only Runtime 的可选兼容组件，不再阻止核心 Workflow；EXA 健康检查直接读取 `config/ai4patent.json` 的统一 endpoint/tool 配置，不再依赖不存在且非权威的 `config/opencode/opencode.json`。
+- 终态修复：`AUDIT_AND_REPORT` 写一次检查点现在保存权威报告的完整 limitations，完成门禁统一聚合 Provider、检索、创造性、价值和审计限制；新增回归断言，任何报告限制均使终态成为 `COMPLETED_WITH_LIMITATIONS` 并持久化到 `limitation_json`。
+- 在线模型冒烟：使用忽略式本地密钥临时注入 `https://api.deepseek.com` / `deepseek-v4-flash`；Parser 第 1 次通过 Schema，2 个特征，3273 tokens；未打印密钥或模型全文。
+- 首次发现性 E2E：Run `c47f9171-7f02-4c0f-b774-176e4fd4b1c8` 在 223046 ms 内完成 11/11 步，17 个候选、10 篇深读、EXA 3 次调用全成功、Google Patents 12 次调用中 1 次契约失败、critical=0；Manifest 报告可读，但旧进程把含 5 条限制的报告误记为 `COMPLETED`，该历史保留作为缺陷证据，未改写。
+- 修复后 E2E：Run `e99f0257-123f-4c9c-bebf-600721faed97` 在 263587 ms 内达到 `COMPLETED_WITH_LIMITATIONS`；11/11 步均 attempt 1，40 条原始命中、26 个去重候选、10 篇深读，EXA 4/4、Google Patents 14/14 调用成功，critical=0、warning=1，6 条限制已同时写入报告和 Run 终态；`report` 命令完成 Manifest 复验，权威 JSON 为 290032 bytes。
+- 持久与部署复验：服务重启后 `status/history/report` 恢复同一 Run；最终在同一真实终端完成 `start.sh → 首页/OpenAPI/health/history/report → stop.sh`，健康为 `ok=true/status=ok`、历史含 2 个 Case、报告深读数为 10，停止后无残留服务。
+- 涉及文件：`backend/requirements.txt`、`backend/idea/health.py`、`backend/idea/execution.py`、`backend/tests/test_health.py`、`backend/tests/test_execution.py`、`README.md`、`docs/development-log.md`。
+- 测试：健康/API 定向 15 项通过；Execution/Workflow 定向 13 项通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q` 共 150 项通过；Skill `quick_validate.py` 通过；`pip check`、`compileall`、配置/Schema JSON、4 个 shell 脚本语法和 `git diff --check` 全部通过。
+- 提交主题：`fix(idea): [IDEA-TESTENV-001] restore live test and limitation gates`
+- 已知限制：受限沙箱中的 Starlette 同步 `TestClient` 线程/事件循环仍会挂起，项目判据必须使用真实 Linux 环境；在线结论仍受报告中明确的检索、创造性和价值限制约束。模型密钥仅用于临时测试进程，未写入跟踪文件。

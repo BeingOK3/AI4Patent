@@ -17,6 +17,7 @@ class HealthServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         root = Path(self.temp.name)
+        self.root = root
         raw = json.loads(Path("config/ai4patent.json").read_text(encoding="utf-8"))
         raw["storage"]["database"] = str(root / "idea.db")
         raw["storage"]["cache_dir"] = str(root / "cache")
@@ -42,10 +43,6 @@ class HealthServiceTests(unittest.TestCase):
         self.opencode = root / "opencode"
         self.opencode.write_text("binary", encoding="utf-8")
         self.opencode.chmod(0o755)
-        self.opencode_config = root / "opencode.json"
-        self.opencode_config.write_text(
-            json.dumps({"mcp": {"exa": {"type": "remote"}}}), encoding="utf-8"
-        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -59,7 +56,6 @@ class HealthServiceTests(unittest.TestCase):
             self.db,
             self.cache,
             opencode_bin=self.opencode,
-            opencode_config_path=self.opencode_config,
             google_patents_probe=google_probe,
             workflow_recovery_ready=lambda: recovery,
         )
@@ -80,6 +76,24 @@ class HealthServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "degraded")
         self.assertTrue(result["components"]["exa_mcp"]["ok"])
         self.assertFalse(result["components"]["google_patents_local"]["ok"])
+
+    def test_idea_health_uses_unified_exa_config_and_does_not_require_opencode(self) -> None:
+        async def google_probe():
+            return True, "fixture"
+
+        service = HealthService(
+            self.config,
+            self.db,
+            self.cache,
+            opencode_bin=self.root / "missing-opencode",
+            google_patents_probe=google_probe,
+            workflow_recovery_ready=lambda: True,
+        )
+        result = asyncio.run(service.check())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["components"]["opencode"]["status"], "optional")
+        self.assertEqual(result["components"]["exa_mcp"]["status"], "configured")
 
     def test_missing_model_credential_is_core_error(self) -> None:
         self.config.model.auth_file.unlink()
@@ -106,7 +120,6 @@ class HealthServiceTests(unittest.TestCase):
             self.db,
             self.cache,
             opencode_bin=self.opencode,
-            opencode_config_path=self.opencode_config,
             workflow_recovery_ready=lambda: True,
         )
         response = AsyncMock()

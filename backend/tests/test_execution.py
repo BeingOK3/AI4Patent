@@ -166,6 +166,27 @@ class CorruptReporting(FakeReporting):
         return report
 
 
+class LimitedReporting(FakeReporting):
+    async def generate(self, run_id, *args, **kwargs):
+        self.calls += 1
+        run = self.database.get_run(run_id)
+        report = {
+            "schema_version": "test",
+            "audit": {"counts": {"critical": 0, "warning": 0, "info": 1}},
+            "limitations": [
+                {
+                    "code": "PROVIDER_CALL_FAILURE",
+                    "message": "fixture provider fetch returned CONTRACT_ERROR",
+                }
+            ],
+        }
+        self.store.write_reports(
+            run["case_id"], run_id, report=report, markdown="# limited test\n",
+            manifest_metadata={"fixture": True},
+        )
+        return report
+
+
 class WorkflowExecutorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -221,6 +242,19 @@ class WorkflowExecutorTests(unittest.TestCase):
                 (run["run_id"],),
             ).fetchone()[0]
         self.assertEqual(attempts, 2)
+
+    def test_report_limitations_produce_completed_with_limitations_terminal_state(self) -> None:
+        run = self.create_run()
+        executor = self.executor(
+            run, reporting=LimitedReporting(self.db, self.store)
+        )
+        status = asyncio.run(executor.execute(run["run_id"]))
+        self.assertEqual(status, "COMPLETED_WITH_LIMITATIONS")
+        stored = self.db.get_run(run["run_id"])
+        self.assertEqual(stored["status"], "COMPLETED_WITH_LIMITATIONS")
+        self.assertEqual(
+            stored["limitation_json"][0]["code"], "PROVIDER_CALL_FAILURE"
+        )
 
     def test_write_once_parser_checkpoint_is_reused_after_crash_window(self) -> None:
         run = self.create_run()

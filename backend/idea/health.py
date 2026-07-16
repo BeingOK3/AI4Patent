@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -25,7 +26,6 @@ class HealthService:
         cache: CacheStore,
         *,
         opencode_bin: str | Path | None = None,
-        opencode_config_path: str | Path | None = None,
         google_patents_probe: Probe | None = None,
         workflow_recovery_ready: Callable[[], bool] | None = None,
     ):
@@ -33,10 +33,10 @@ class HealthService:
         self.database = database
         self.cache = cache
         self.opencode_bin = Path(
-            opencode_bin or PROJECT_ROOT / "bin" / "opencode" / "opencode"
-        )
-        self.opencode_config_path = Path(
-            opencode_config_path or PROJECT_ROOT / "config" / "opencode" / "opencode.json"
+            opencode_bin
+            or os.environ.get("OPENCODE_EXE")
+            or shutil.which("opencode")
+            or PROJECT_ROOT / "bin" / "opencode" / "opencode"
         )
         self.google_patents_probe = google_patents_probe or self._probe_google_patents
         self.workflow_recovery_ready = workflow_recovery_ready or (lambda: False)
@@ -56,7 +56,10 @@ class HealthService:
             "detail": "recovery loop is ready" if recovery_ready else "workflow not connected yet",
         }
         provider_available = exa["ok"] or google["ok"] or self.config.search.providers.local_cache.enabled
-        core_ok = database["ok"] and cache["ok"] and opencode["ok"] and model["ok"]
+        # The current IDEA-only Workflow calls its model and retrieval providers
+        # directly. OpenCode remains an optional legacy integration and must not
+        # prevent the IDEA API from accepting a Run.
+        core_ok = database["ok"] and cache["ok"] and model["ok"]
         all_online = exa["ok"] and google["ok"]
         status = "ok" if core_ok and all_online and recovery_ready else "degraded"
         if not core_ok or not provider_available:
@@ -113,7 +116,7 @@ class HealthService:
         ready = self.opencode_bin.is_file() and os.access(self.opencode_bin, os.X_OK)
         return {
             "ok": ready,
-            "status": "ready" if ready else "error",
+            "status": "ready" if ready else "optional",
             "path": str(self.opencode_bin),
         }
 
@@ -142,19 +145,17 @@ class HealthService:
         }
 
     def _check_exa_config(self) -> dict:
-        if not self.config.search.providers.exa_mcp.enabled:
+        settings = self.config.search.providers.exa_mcp
+        if not settings.enabled:
             return {"ok": False, "status": "disabled"}
-        try:
-            raw = json.loads(self.opencode_config_path.read_text(encoding="utf-8-sig"))
-            exa = raw.get("mcp", {}).get("exa", {})
-            configured = bool(exa) and exa.get("enabled", True) is not False
-            return {
-                "ok": configured,
-                "status": "configured" if configured else "error",
-                "detail": "configuration present; runtime calls are audited separately",
-            }
-        except (OSError, json.JSONDecodeError) as exc:
-            return {"ok": False, "status": "error", "detail": type(exc).__name__}
+        configured = bool(str(settings.endpoint)) and bool(
+            settings.search_tool and settings.fetch_tool
+        )
+        return {
+            "ok": configured,
+            "status": "configured" if configured else "error",
+            "detail": "unified configuration present; runtime calls are audited separately",
+        }
 
     async def _probe_google_patents(self) -> tuple[bool, str]:
         settings = self.config.search.providers.google_patents_local

@@ -113,7 +113,7 @@ curl http://127.0.0.1:8001/api/system/cache
 
 ```bash
 PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q
-python3 /home/ubuntu/.codex/skills/.system/skill-creator/scripts/quick_validate.py \
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-creator/scripts/quick_validate.py" \
   config/opencode/skills/patent-idea-review
 ```
 

@@ -7,7 +7,7 @@ import json as _json
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-OPENCODE_EXE = str(BASE / "bin" / "opencode" / "opencode.exe")
+OPENCODE_BIN = str(BASE / "bin" / "opencode" / "opencode")
 WORKSPACE = BASE / "workspace"
 UPLOADS = WORKSPACE / "uploads"
 DEFAULT_MODEL = "agent-plan/glm-5.2"
@@ -71,7 +71,7 @@ def kill_current():
 async def run_task(text, model=DEFAULT_MODEL, files=None, session_id=None, task_id=None):
     """opencode run --format json。session_id 不为空时续接该 session（追问）。
     task_id 用于多模块并行时追踪/停止单个任务。"""
-    args = [OPENCODE_EXE, "run", "--format", "json", text]
+    args = [OPENCODE_BIN, "run", "--format", "json", text]
     if session_id:
         args += ["--session", session_id]
     else:

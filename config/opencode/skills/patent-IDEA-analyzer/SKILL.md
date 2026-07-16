@@ -1,15 +1,15 @@
 ﻿---
 name: patent-IDEA-analyzer
 description: >
-  专利新颖性与创造性快速审查。输入任意形式的专利Idea（权利要求草稿、方案概述、技术描述均可），
-  执行多引擎全量检索并以专利审查员视角对新颖性和创造性进行系统评价，输出审查意见模拟报告。
-  触发词：新颖性检索、创造性评价、专利审查模拟、现有技术检索、三步法分析、
-         专利检索、专利评审、这个方案有没有创造性、这个idea能不能申请专利
+  DEPRECATED legacy manual retained only for historical regression. Never invoke for a user task.
+  Use patent-idea-review, which calls the deterministic local Workflow API and audited report store.
 trigger: >
-  用户提供专利Idea（文字描述/权利要求草稿/方案概述），要求检索现有技术或评估新颖性/创造性。
+  Never. This Skill is archived and superseded by patent-idea-review.
 ---
 
 # 专利新颖性与创造性审查 Skill
+
+> **已归档**：本文件仅用于旧案例回归，不得作为运行指令。所有新任务必须加载 `patent-idea-review` 并调用受控 Workflow。
 
 ## 概述
 

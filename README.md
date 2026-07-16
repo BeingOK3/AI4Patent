@@ -1,146 +1,140 @@
-# AI4Patent - 专利 AI Agent 工作台
+# AI4Patent IDEA 工作台
 
-基于 opencode 引擎的专利智能分析平台，集成 5 大专利分析模块，支持并行执行、文件上传下载、多轮追问。
+AI4Patent 当前只对外启用“专利 IDEA 评估”。系统把检索、全文核验、新颖性、创造性、价值分析、审计和报告固化为后端 Workflow；Skill 只负责提交任务、等待持久终态和读取权威报告，不能自行跳步或模拟工具结果。
 
-## 功能模块
+## 当前能力
 
-| 模块 | Skill | 功能说明 |
-|------|-------|---------|
-| 💡 专利IDEA评审 | `patent-IDEA-analyzer` | 输入专利 Idea（文字描述/权利要求草稿/方案概述），执行多引擎全量检索，以专利审查员视角对新颖性和创造性进行系统评价，输出审查意见模拟报告 |
-| 📊 业界专利分析 | `storage-patent-deepdive` | 输入一批存储领域专利，自动补全数据、分类标引、技术方案摘要、价值评分、Claim 1 要件分解、竞争格局分析、技术趋势研判 |
-| 📋 PCT申请评审 | `patent-pct-review` | 输入 Excel 专利清单和 DOCX 申请文件，从创新性、可规避性、市场价值、落地产品、可取证性五个维度评分，排序后推荐进 PCT 的专利 |
-| 💰 专利价值评估 | `patent-value-assessment` | 输入已授权专利，从权利要求稳定性、技术创新程度、业界侵权使用证据、技术时效性四个维度评估，输出价值等级（A/B/C/D）及维持/放弃建议 |
-| ⚖️ 侵权挖掘 | `seek-cfp-patent` | 输入专利 Claim 1，拆分技术特征、搜索友商产品、逐特征加权比对，输出侵权分析报告 |
+- 固定 11 步 Workflow，每一步都有 attempt、状态、错误码和 write-once 检查点。
+- 本地 Google Patents 与 EXA MCP 并行检索，结果独立留痕、归一化、合并去重；单路故障可降级。
+- 先基于标题/摘要和中英双语概念组筛选，再对相关候选读取全文；深读下限固定为 10 篇。
+- 新颖性遵守单篇文献原则，可直接输出“具备新颖性”，同时给出置信度、最接近文献、缺失特征、检索范围和局限。
+- 创造性、价值、模拟审查意见和证据审计均使用严格 JSON Schema；模型不能伪造 evidence ID。
+- 价值维度使用 1–5 分制；面向用户的判断文字统一为中文，报告中的专利公开号可直接打开原文。
+- Case/Run、输入快照、报告和 Manifest 持久保存；历史不自动删除，只支持用户手动删除。
+- 页面实时显示 Workflow 步骤和 Tool Call；详细事件追加到 Git 忽略的 JSONL 调试日志。
+- 可重建缓存使用 1 GiB 上限和 FIFO 清理，不会清理 Case/Run 权威结果。
 
 ## 快速开始
 
-### 环境要求
+环境要求：Linux、Python 3.10+、`bash`、`curl`，以及可访问模型 API 和至少一个专利检索 Provider 的网络。
 
-- Windows 10/11
-- Python 3.10+
-- 网络访问（用于 EXA 搜索和模型 API）
-
-### 安装
-
-```powershell
-git clone https://github.com/di-jin97/AI4Patent.git
+```bash
+git clone git@github.com:BeingOK3/AI4Patent.git
 cd AI4Patent
-.\install.ps1
+./install.sh
 ```
 
-`install.ps1` 会自动完成：
-1. 解压 opencode 引擎到 `bin/opencode/`
-2. 创建 Python 虚拟环境并安装后端依赖
-3. 创建 logs、data、workspace 等目录
-4. 检查 API Key 配置状态
+存储、缓存、检索 Provider 和预算统一配置在 `config/ai4patent.json`。每个网页 Run 的模型 Base URL、API Key 和 Model 由使用者临时输入；API Key 不写入配置文件、数据库、历史、日志或浏览器存储。
 
-### 配置 API Key
+启动服务：
 
-安装完成后，启动服务并在界面中配置：
-
-1. 运行 `.\start.ps1`（或 `.\dev.ps1`）
-2. 浏览器打开 `http://localhost:8001`
-3. 首次访问会弹出配置框，填入：
-   - **Provider 名称**：如 `agent-plan`
-   - **Base URL**：如 `https://ark.cn-beijing.volces.com/api/plan/v3`
-   - **API Key**：你的模型 API Key
-   - **模型名称**：如 `glm-5.2`
-4. 点击保存即可使用
-
-### 启动
-
-```powershell
-# 方式一：后台启动（推荐）
-.\start.ps1
-
-# 方式二：前台启动（实时日志，开发调试用）
-.\dev.ps1
+```bash
+./start.sh
+# 浏览器访问 http://localhost:8001
 ```
 
-启动后自动打开浏览器访问 `http://localhost:8001`。
+打开页面后，在“模型 API（本页临时使用）”中输入自己的 Base URL、API Key 和 Model。三项内容在刷新、关闭、重新进入页面或点击左侧“＋”后都会清空；API Key 只在当前页面和对应 Run 的进程内存中使用。
 
-### 停止
+开发模式与停止：
 
-```powershell
-.\stop.ps1
+```bash
+./dev.sh
+./stop.sh
 ```
 
-## 使用方法
+## 使用方式
 
-### 基本流程
+网页为三栏 IDEA 工作区：
 
-1. 选择上方功能模块按钮（如 💡 专利IDEA评审）
-2. 在输入框中输入专利内容（专利号、技术方案描述、权利要求等）
-3. 可选：上传相关文件（Excel 专利清单、DOCX 申请文件等），勾选后随请求发送给模型
-4. 点击「执行」，等待 AI 分析完成（通常 1-5 分钟）
-5. 结果在下方回答框中展示，支持 Markdown 格式
-6. 可在追问框中继续提问，AI 会基于上下文回答
+1. 左侧查看共享 Case/Run 历史和终态。Case 是同一技术方案的历史分组，名称必须唯一；每个 Run 都是带独立输入哈希的不可变快照，不会覆盖其他 Run。
+2. 中间输入本页临时 Base URL、API Key、Model 和技术方案，选择评估日、quick/standard/deep、候选上限和深读上下限。
+3. 运行中查看 11 步持久进度，以及实时 Workflow、Tool Call、耗时、结果数和错误；刷新或断线后可从持久状态恢复显示。
+4. 右侧查看中文新颖性、创造性、1–5 分价值、审计、Provider 状态和限制；专利号可打开原文，并可导出 Markdown。
 
-### 并行执行
+点击 Case 会打开其最新 Run，点击任意 Run 会把当次 IDEA、评估日、日期依据和检索预算恢复到中栏。编辑这些历史输入后提交会在当前 Case 下创建新 Run；“重新运行”会复制原 Run 的输入和预算。两种方式都只新增记录，不修改旧 Run。修复前已经生成的英文历史报告保持 Manifest 不变，页面会显示中文兼容说明；新 Run 的创造性、价值、审计、限制和报告说明必须通过中文语言门禁，否则模型调用会自动重试。
 
-5 个模块相互独立，支持并行运行：
-- 在一个模块中提交任务后，可切换到其他模块继续提交
-- 运行中的模块标签会显示橙色闪烁指示点
-- 每个模块的输入、输出、追问状态独立保存，切换不丢失
-- 每个模块可单独停止
+默认检索预算：
 
-### 文件管理
+| 模式 | 候选上限 | 深读下限 | 深读上限 |
+|---|---:|---:|---:|
+| quick | 30 | 10 | 10 |
+| standard | 80 | 10 | 20 |
+| deep | 150 | 20 | 40 |
 
-- 右侧文件管理区支持上传/下载/删除文件
-- 上传文件后勾选，会随请求一起发送给模型
-- 模型生成的文件也会显示在文件列表中
+系统会根据 IDEA 的宽窄在上下限之间确定目标。用户可以修改上限，但深读下限不能低于 10，候选上限不能小于深读上限。
 
-## 搜索能力
+## Skill/CLI
 
-平台集成 EXA MCP 搜索引擎，支持：
+OpenCode 中的当前入口为 `config/opencode/skills/patent-idea-review/`。旧 `patent-IDEA-analyzer` 已归档，不应加载执行。
 
-- **专利全文获取**：通过专利号构造 Google Patents URL，使用 `exa_web_fetch_exa` 抓取完整专利文本（标题、摘要、权利要求、说明书）
-- **关键词搜索**：使用 `exa_web_search_exa` 搜索相关专利、论文、产品文档、白皮书
-- EXA 走海外服务器代理，不受本地网络限制，可访问 Google Patents 等海外站点
+服务启动后可直接运行确定性 CLI：
 
-## 技术架构
+CLI 不接受明文 `--api-key` 参数；启动 Run 时只从当前进程的环境变量读取 Token：
 
+```bash
+export DEEPSEEK_API_KEY='your-key'
+config/opencode/skills/patent-idea-review/scripts/idea_workflow.py health
+
+config/opencode/skills/patent-idea-review/scripts/idea_workflow.py run \
+  --model-base-url https://api.deepseek.com \
+  --model deepseek-v4-flash \
+  --idea '一种具体的技术方案……' \
+  --evaluation-date 2026-07-16 \
+  --mode quick \
+  --candidate-max 30 \
+  --deep-min 10 \
+  --deep-max 10
 ```
-AI4Patent/
-├── backend/              # FastAPI 后端
-│   ├── main.py           # API 路由（配置/文件/任务执行）
-│   ├── opencode_client.py # opencode 引擎调用（支持并行任务）
-│   └── requirements.txt   # Python 依赖
-├── frontend/
-│   └── index.html        # 单页前端（5模块并行 + 状态隔离）
-├── bin/
-│   ├── opencode/         # opencode 引擎（从 zip 解压）
-│   └── opencode-windows-x64.zip
-├── config/opencode/
-   ├── opencode.json      # opencode 配置（模型 + EXA MCP）
-   ├── AGENTS.md          # 全局规则（搜索指南、编码规则）
-   └── skills/            # 5 个专利分析 Skill
-       ├── patent-IDEA-analyzer/
-       ├── storage-patent-deepdive/
-       ├── patent-pct-review/
-       ├── patent-value-assessment/
-       └── seek-cfp-patent/
-├── install.ps1           # 一键安装
-├── start.ps1             # 后台启动
-├── dev.ps1               # 前台启动（开发模式）
-└── stop.ps1              # 停止服务
-``+
-### 技术栈
 
-- **后端**：Python + FastAPI + Uvicorn
-- **引擎**：opencode run（AI Agent 执行引擎）
-- **前端**：原生 HTML/CSS/JS（单页应用）
-- **搜索**：EXA MCP（海外代理搜索 + 网页抓取）
-- **模型**：兼容 OpenAI API 格式的任意大模型（如 GLM-5.2）
+CLI 只有在 Run 到达成功终态后才返回报告；失败、取消、健康门禁失败或输入非法均返回非零退出码。
 
-## 脚本说明
+服务重启不会恢复任何 Token。重启时尚未结束的 Run 会进入 `FAILED / RUNTIME_API_KEY_REQUIRED_AFTER_RESTART`；在网页重新输入 Token 后使用“重新运行”创建新 Run，历史记录仍保留。
 
-| 脚本 | 用途 |
-|------|------|
-| `install.ps1` | 一键安装：解压引擎、创建虚拟环境、安装依赖、创建目录 |
-| `start.ps1` | 后台启动服务 + 自动开浏览器，关闭窗口后服务继续运行 |
-| `dev.ps1` | 前台启动服务，终端实时显示日志，Ctrl+C 退出 |
-| `stop.ps1` | 停止后台运行的服务 |
+## 运行状态与故障语义
+
+- `COMPLETED`：11 步、审计和 Manifest 全部通过。
+- `COMPLETED_WITH_LIMITATIONS`：报告有效，但存在明确限制，例如一路 Provider 降级。
+- `FAILED`：步骤重试耗尽或完成门禁失败，不会生成伪成功报告。
+- `CANCELLED`：用户取消，保留已产生的审计记录。
+
+本地 Google Patents 不需要单独服务，但仍依赖当前主机访问 `patents.google.com`；“本地”指工具由本项目实现，并不等于离线镜像。EXA MCP 是独立备路。两路都不可用时检索会失败，模型记忆不能替代真实检索。FIFO 缓存可复用已经成功抓取的数据，但不是完整专利数据库。
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8001/api/system/health
+curl http://127.0.0.1:8001/api/system/cache
+# 将 RUN_ID 替换为实际值，查看持久步骤、Tool Call 和 JSONL 事件
+curl http://127.0.0.1:8001/api/idea/runs/RUN_ID/debug
+```
+
+## 测试
+
+```bash
+PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q
+python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-creator/scripts/quick_validate.py" \
+  config/opencode/skills/patent-idea-review
+```
+
+测试使用 fixture 或 fake transport 时不依赖外网；真实 E2E 需要模型密钥和检索网络。
+
+## 主要目录
+
+```text
+backend/idea/              Workflow、Provider、Agent Schema、审计和报告
+backend/tests/             离线单元/合约/集成测试
+frontend/                  IDEA 单页工作区
+config/ai4patent.json      唯一系统设置入口（不含密钥）
+config/opencode/AGENTS.md  OpenCode 强制路由
+config/opencode/skills/    薄 IDEA Skill 与归档 Skill
+data/ai4patent/            SQLite 运行数据（Git 忽略）
+workspace/idea-runs/       不可自动删除的 Run 输入与报告（Git 忽略）
+workspace/debug/idea-runs/  逐 Run JSONL 调试日志（Git 忽略，不记录 API Key）
+workspace/cache/           1 GiB FIFO 可重建缓存（Git 忽略）
+docs/                      技术设计与只追加开发日志
+```
+
+完整设计见 `docs/idea-rebuild-technical-design.md`，开发与测试证据见 `docs/development-log.md`。
 
 ## License
 

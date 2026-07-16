@@ -1,365 +1,191 @@
-﻿<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI4P 专利 AI Agent 平台</title>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f7f7f8; color: #1a1a1a; }
-  h1 { margin: 0 0 4px; font-size: 22px; }
-  .sub { color: #666; font-size: 12px; margin-bottom: 12px; }
-  .grid { display: grid; grid-template-columns: 1fr 360px; gap: 16px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-  .left, .right { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 16px; }
-  .workflows { display: flex; gap: 6px; margin: 10px 0; flex-wrap: wrap; }
-  .wf { padding: 7px 12px; border: 2px solid #d4d4d8; border-radius: 8px; cursor: pointer; font-size: 12.5px; user-select: none; }
- .wf.active { border-color: #2563eb; background: #eff6ff; color: #2563eb; font-weight: 600; }
-  .wf.running { border-color: #f59e0b; position: relative; }
-  .wf.running::after { content: ""; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; background: #f59e0b; border-radius: 50%; animation: blink 1s infinite; }
- textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 13px; resize: vertical; }
- .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
- button.run { padding: 8px 22px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
- button.run:disabled { background: #9ca3af; }
-  button.stop { padding: 8px 16px; background: #ef4444; color: #fff; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
-  button.stop:disabled { background: #fca5a5; }
- .status { margin-top: 12px; font-size: 13px; color: #2563eb; min-height: 20px; }
-  .panel { margin-top: 8px; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px; min-height: 80px; max-height: 60vh; overflow-y: auto; }
-  .md h1 { font-size: 18px; border-bottom: 2px solid #2563eb; padding-bottom: 4px; margin: 14px 0 8px; }
-  .md h2 { font-size: 16px; margin: 12px 0 6px; color: #1e40af; }
-  .md h3 { font-size: 14px; margin: 10px 0 5px; color: #1e3a8a; }
-  .md p { margin: 6px 0; line-height: 1.7; }
-  .md table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12px; }
-  .md th, .md td { border: 1px solid #d0d0d0; padding: 5px 8px; text-align: left; }
-  .md th { background: #f0f4ff; }
-  .md code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
-  .md pre { background: #1e293b; color: #e2e8f0; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
-  .md pre code { background: transparent !important; color: #e2e8f0 !important; padding: 0 !important; }
-  .md ul, .md ol { margin: 5px 0; padding-left: 20px; }
-  .md strong { color: #b91c1c; }
-  .qa-sep { border-top: 2px dashed #93c5fd; margin: 14px 0 8px; padding-top: 6px; }
-  .qa-q { color: #2563eb; font-size: 13px; margin-bottom: 4px; }
-  .qa-a { color: #888; font-size: 12px; margin-bottom: 6px; }
-  .ftitle { font-size: 12px; color: #888; margin: 10px 0 4px; font-weight: 600; }
-  .file-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 12.5px; }
-  .file-row .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file-row .fsize { color: #999; font-size: 11px; }
-  .fbtn { font-size: 11px; padding: 2px 8px; border-radius: 4px; text-decoration: none; cursor: pointer; border: 1px solid #ccc; background: #fff; color: #333; }
-  .fbtn.del { color: #dc2626; border-color: #fca5a5; }
-  .upload-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
-  input[type=file] { font-size: 11px; flex: 1; }
-  .sel-hint { font-size: 11px; color: #2563eb; }
-  .dot { animation: blink 1s infinite; display: inline-block; }
-  @keyframes blink { 50% { opacity: .3; } }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI4Patent · IDEA 专利评估</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div id="configOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#f7f7f8;z-index:999;padding:40px 20px;overflow-y:auto">
-  <div style="max-width:460px;margin:0 auto;background:#fff;border-radius:12px;padding:28px;box-shadow:0 2px 12px rgba(0,0,0,.1)">
-    <h2 style="margin:0 0 6px">⚙️ 首次配置</h2>
-    <p style="color:#666;font-size:13px;margin:0 0 18px">填入大模型的 API 信息，保存后即可使用。</p>
-    <label style="font-size:12px;color:#555">Provider 名称</label>
-    <input id="cfgProvider" value="agent-plan" style="width:100%;padding:8px;margin:4px 0 12px;border:1px solid #ccc;border-radius:6px;font-size:13px">
-    <label style="font-size:12px;color:#555">Base URL（API 地址）</label>
-    <input id="cfgBaseURL" value="https://ark.cn-beijing.volces.com/api/plan/v3" style="width:100%;padding:8px;margin:4px 0 12px;border:1px solid #ccc;border-radius:6px;font-size:13px">
-    <label style="font-size:12px;color:#555">API Key</label>
-    <input id="cfgApiKey" placeholder="粘贴你的 API Key" style="width:100%;padding:8px;margin:4px 0 12px;border:1px solid #ccc;border-radius:6px;font-size:13px">
-    <label style="font-size:12px;color:#555">模型名称</label>
-    <input id="cfgModel" value="glm-5.2" style="width:100%;padding:8px;margin:4px 0 16px;border:1px solid #ccc;border-radius:6px;font-size:13px">
-    <button class="run" style="width:100%;padding:10px" onclick="saveConfig()">保存并开始使用</button>
-  </div>
-</div>
-<h1>AI4P 专利 AI Agent 平台 <span style="font-size:13px;cursor:pointer;color:#2563eb" onclick="document.getElementById('configOverlay').style.display='block'">⚙️设置</span></h1>
-<div class="sub">5 大专利模块 · 文件上传/下载 · 多轮追问</div>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">AI4PATENT / INTERNAL</p>
+      <h1>IDEA 专利评估工作台</h1>
+      <p class="subtitle">双路检索 · 证据矩阵 · 固定 Workflow · 全量历史留存</p>
+    </div>
+    <div class="system-state">
+      <span id="healthDot" class="health-dot"></span>
+      <span id="healthText">检查系统状态…</span>
+      <span id="cacheText" class="muted"></span>
+    </div>
+  </header>
 
-<div class="grid">
-<div class="left">
-  <div class="workflows" id="wfs">
-    <div class="wf active" data-wf="idea">💡 专利IDEA评审</div>
-    <div class="wf" data-wf="analyze">📊 业界专利分析</div>
-    <div class="wf" data-wf="pct">📋 PCT申请评审</div>
-    <div class="wf" data-wf="value">💰 专利价值评估</div>
-    <div class="wf" data-wf="cfp">⚖️ 侵权挖掘</div>
-  </div>
-  <textarea id="input" rows="3" placeholder=""></textarea>
-  <div class="row">
-   <button class="run" id="runBtn" onclick="run(false)">执行 ▶</button>
-    <button class="stop" id="stopBtn" style="display:none" onclick="stopCurrent()">⏹ 停止</button>
-   <input id="model" value="agent-plan/glm-5.2" style="font-size:12px;border:1px solid #ccc;border-radius:6px;padding:5px 8px;width:170px;">
-    <span class="sel-hint" id="selHint"></span>
-  </div>
-  <div class="status" id="status"></div>
-  <div class="panel" id="output">结果将在这里显示...</div>
-  <div id="followup" style="display:none;margin-top:10px">
-    <div style="font-size:12px;color:#666;margin-bottom:4px">💬 就上面的结果继续追问（同一 session，agent 记得上下文）：</div>
-    <textarea id="followupInput" rows="2" style="height:46px" placeholder="继续提问..."></textarea>
-    <button class="run" style="padding:5px 16px;font-size:13px;margin-top:4px" onclick="run(true)">追问 ▶</button>
-  </div>
-</div>
+  <main class="workspace">
+    <aside class="panel history-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">SHARED HISTORY</p>
+          <h2>评估记录</h2>
+        </div>
+        <button id="newCaseBtn" class="icon-button" title="新建空白方案组">＋</button>
+      </div>
+      <div id="caseList" class="case-list" aria-live="polite"></div>
+    </aside>
 
-<div class="right">
-  <div class="ftitle">📂 文件管理</div>
-  <div class="upload-row">
-    <input type="file" id="fileInput" multiple>
-    <button class="run" style="padding:5px 12px;font-size:12px" onclick="uploadFiles()">上传</button>
-  </div>
-  <div id="fileList"></div>
-</div>
-</div>
+    <section class="panel input-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker">CONTROLLED INPUT</p>
+          <h2 id="inputPanelTitle">新建 IDEA Run</h2>
+        </div>
+        <span id="activeCaseBadge" class="badge">未选择 Case</span>
+      </div>
 
-<script>
-const TEMPLATES = {
-  idea: "请加载 patent-IDEA-analyzer skill，对以下专利Idea进行新颖性与创造性审查：检索现有技术、三步法分析、出具审查意见模拟报告。\n\n",
-  analyze: "请加载 storage-patent-deepdive skill，对以下存储领域专利进行深度剖析与竞争态势分析：分类标引、技术方案摘要、价值评分、Claim 1要件分解、竞争格局分析、技术趋势研判。\n\n",
-  pct: "请加载 patent-pct-review skill，对以下专利申请进行PCT五维度评审：创新性/可规避性/市场价值/落地产品/可取证性，排序后给PCT建议。\n\n",
-  value: "请加载 patent-value-assessment skill，对以下已授权专利进行价值评估：从权利要求稳定性、技术创新程度、业界侵权使用证据、技术时效性四个维度分析，输出价值等级（A/B/C/D）及维持或放弃建议。\n\n",
-  cfp: "请加载 seek-cfp-patent skill，对以下专利进行侵权挖掘：拆分Claim 1技术特征、搜索友商产品、逐特征加权比对、输出侵权分析报告。\n\n",
-};
-let curWf = "idea";
-const PLACEHOLDERS = {
-  idea: "输入专利Idea描述、权利要求草稿或方案概述...",
-  analyze: "输入专利号列表（SSD/HDD/NVMe/NAND/分布式存储等）...",
-  pct: "输入专利号列表或描述专利申请内容...",
-  value: "输入已授权专利号或描述专利技术方案...",
-  cfp: "输入专利号及第一权利要求（Claim 1全文）...",
-};
-const WF_KEYS = ["idea", "analyze", "pct", "value", "cfp"];
-const wfState = {};
-WF_KEYS.forEach(k => {
-  wfState[k] = {
-    input: "",
-    outputHtml: "",
-    statusHtml: "",
-    sessionId: null,
-    running: false,
-    taskId: null,
-    followupVisible: false,
-    followupInput: "",
-  };
-});
-let selectedFiles = new Set();
-let filePollTimer = null;
+      <div id="runSnapshotNotice" class="snapshot-notice hidden" role="status"></div>
 
-function switchTab(newWf) {
-  if (newWf === curWf) return;
-  const s = wfState[curWf];
-  s.input = document.getElementById("input").value;
-  s.outputHtml = document.getElementById("output").innerHTML;
-  s.statusHtml = document.getElementById("status").innerHTML;
-  s.followupInput = document.getElementById("followupInput").value;
-  s.followupVisible = document.getElementById("followup").style.display !== "none";
-  document.querySelectorAll(".wf").forEach(e => e.classList.remove("active"));
-  document.querySelector('.wf[data-wf="' + newWf + '"]').classList.add("active");
-  curWf = newWf;
-  const ns = wfState[newWf];
-  document.getElementById("input").value = ns.input;
-  document.getElementById("input").placeholder = PLACEHOLDERS[newWf] || "";
-  document.getElementById("output").innerHTML = ns.outputHtml || "结果将在这里显示...";
-  document.getElementById("status").innerHTML = ns.statusHtml;
-  document.getElementById("followupInput").value = ns.followupInput;
-  document.getElementById("followup").style.display = ns.followupVisible ? "block" : "none";
-  document.getElementById("runBtn").disabled = ns.running;
-  document.getElementById("stopBtn").style.display = ns.running ? "inline-block" : "none";
-}
-document.querySelectorAll(".wf").forEach(el => el.onclick = () => switchTab(el.dataset.wf));
+      <form id="runForm">
+        <label for="modelBaseUrl">模型 API（本页临时使用）</label>
+        <div class="form-grid two runtime-config-grid">
+          <div>
+            <label for="modelBaseUrl">Base URL</label>
+            <input id="modelBaseUrl" type="url" required autocomplete="off" spellcheck="false"
+              placeholder="例如：https://api.deepseek.com">
+          </div>
+          <div>
+            <label for="modelName">Model</label>
+            <input id="modelName" required maxlength="200" autocomplete="off" spellcheck="false"
+              placeholder="例如：deepseek-v4-flash">
+          </div>
+        </div>
+        <label for="apiToken">API Key</label>
+        <input id="apiToken" type="password" required autocomplete="new-password" spellcheck="false"
+          placeholder="输入本次页面使用的 API Key">
+        <div class="field-meta">
+          <span>三项配置仅用于当前页面和对应 Run</span>
+          <span>刷新、关闭或点击“＋”后必须重新输入；API Key 不写入历史、日志或浏览器存储</span>
+        </div>
 
-function updateTabIndicator(wfKey, running) {
-  const tab = document.querySelector('.wf[data-wf="' + wfKey + '"]');
-  if (tab) tab.classList.toggle("running", running);
-}
-function anyRunning() { return WF_KEYS.some(k => wfState[k].running); }
-function startFilePollingIfNeeded() {
-  if (filePollTimer) return;
-  filePollTimer = setInterval(() => {
-    loadFiles();
-    if (!anyRunning()) { clearInterval(filePollTimer); filePollTimer = null; }
-  }, 4000);
-}
+        <label for="caseTitle">方案组名称（Case）</label>
+        <input id="caseTitle" maxlength="200" placeholder="例如：Token 热度缓存淘汰">
+        <div class="field-meta"><span>名称必须唯一；用于归纳同一方案的不可变 Run，不参与模型判断</span></div>
 
-async function loadFiles() {
-  try {
-    const r = await fetch("/api/files");
-    const data = await r.json();
-    const el = document.getElementById("fileList");
-    let html = "";
-    if (data.uploads.length) {
-      html += "<div class='ftitle'>上传文件（勾选=喂给模型）</div>";
-      data.uploads.forEach(f => {
-        const ck = selectedFiles.has(f.name) ? "checked" : "";
-        html += `<div class="file-row"><input type="checkbox" class="fcheck" value="${f.name}" ${ck} onchange="toggleSel('${f.name}',this.checked)"><span class="fname">📎 ${f.name}</span><span class="fsize">${(f.size/1024).toFixed(1)}K</span><a class="fbtn" href="/api/download/${encodeURIComponent(f.name)}">下载</a><button class="fbtn del" onclick="delFile('${f.name}')">删</button></div>`;
-      });
-    }
-    if (data.generated.length) {
-      html += "<div class='ftitle'>模型生成文件</div>";
-      data.generated.forEach(f => {
-        html += `<div class="file-row"><span class="fname">🆕 ${f.name}</span><span class="fsize">${(f.size/1024).toFixed(1)}K</span><a class="fbtn" href="/api/download/${encodeURIComponent(f.name)}">下载</a></div>`;
-      });
-    }
-    if (!data.uploads.length && !data.generated.length) html = "<div class='ftitle'>暂无文件</div>";
-    el.innerHTML = html;
-    updateSelHint();
-  } catch(e) {}
-}
-function toggleSel(n,on){ if(on) selectedFiles.add(n); else selectedFiles.delete(n); updateSelHint(); }
-function updateSelHint(){ document.getElementById("selHint").textContent = selectedFiles.size ? `📎 已选${selectedFiles.size}文件` : ""; }
-async function uploadFiles(){
-  const inp = document.getElementById("fileInput");
-  if(!inp.files.length) return;
-  const fd = new FormData();
-  for(const f of inp.files) fd.append("files", f);
-  await fetch("/api/upload", {method:"POST", body: fd});
-  inp.value = ""; loadFiles();
-}
-async function delFile(name){
-  if(!confirm("删除 "+name+"?")) return;
-  await fetch("/api/files/"+encodeURIComponent(name), {method:"DELETE"});
-  selectedFiles.delete(name); loadFiles();
-}
+        <label for="ideaText">技术方案 / IDEA</label>
+        <textarea id="ideaText" minlength="10" maxlength="200000" rows="10" required
+          placeholder="说明应用场景、技术问题、必要技术手段、数据流/控制关系和预期技术效果。描述越具体，检索和特征拆分越稳定。"></textarea>
+        <div class="field-meta"><span id="ideaCount">0 字符</span><span id="runInputMode">新 Run 输入；提交后形成不可变快照</span></div>
 
-async function run(isFollowup) {
-  const wfKey = curWf;
-  const s = wfState[wfKey];
-  let text, sid = null;
-  if (isFollowup) {
-    text = document.getElementById("followupInput").value.trim();
-    if (!text) return;
-    document.getElementById("followupInput").value = "";
-    s.followupInput = "";
-    sid = s.sessionId;
-  } else {
-    text = document.getElementById("input").value.trim();
-    if (!text && !selectedFiles.size) { alert("请输入内容或选文件"); return; }
-  }
-  const model = document.getElementById("model").value.trim() || "agent-plan/glm-5.2";
-  const files = isFollowup ? [] : [...selectedFiles];
-  const fileHint = files.length ? `\n\n（请同时读取附带的文件：${files.join("、")})` : "";
-  const prompt = isFollowup ? text : (TEMPLATES[wfKey] + text + fileHint + "\n\n（重要：请按skill流程完整执行全部步骤，全程在对话中输出分析结果，默认不要生成任何文件。全程不要向用户提问或等待确认，所有信息自行推断，一口气完成。）");
+        <div class="form-grid two">
+          <div>
+            <label for="evaluationDate">评估日</label>
+            <input id="evaluationDate" type="date" required>
+            <p class="input-help">实际检索截止日；该日期之后公开的专利不进入新颖性判断。</p>
+          </div>
+          <div>
+            <label for="dateBasis">评估日依据</label>
+            <input id="dateBasis" value="用户指定或提交日" maxlength="200">
+            <p class="input-help">说明为什么选择该日期，仅用于报告追溯，不改变计算。</p>
+          </div>
+        </div>
 
-  s.running = true; s.taskId = null;
-  updateTabIndicator(wfKey, true);
-  startFilePollingIfNeeded();
-  if (wfKey === curWf) {
-    const out = document.getElementById("output");
-    if (!isFollowup) {
-      out.innerHTML = ""; out.className = "panel";
-    } else {
-      const sep = document.createElement("div"); sep.className = "qa-sep"; out.appendChild(sep);
-      const qd = document.createElement("div"); qd.className = "qa-q"; qd.textContent = "❓ 追问：" + text; out.appendChild(qd);
-    }
-    document.getElementById("runBtn").disabled = true;
-    document.getElementById("stopBtn").style.display = "inline-block";
-    const statusEl = document.getElementById("status");
-    statusEl.innerHTML = '<span class="dot">⏳</span> ' + (isFollowup ? "追问中..." : "agent 工作中（可能1-3分钟）...");
-    s.statusHtml = statusEl.innerHTML;
-  } else {
-    s.statusHtml = '<span class="dot">⏳</span> 后台运行中...';
-  }
-  const t0 = Date.now();
-  let chunks = [];
-  try {
-    const resp = await fetch("/api/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({text: prompt, model, files, session_id: sid})});
-    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
-    while (true) {
-      const {done, value} = await reader.read(); if (done) break;
-      buf += dec.decode(value, {stream:true});
-      let idx;
-      while ((idx = buf.indexOf("\n\n")) >= 0) {
-        const block = buf.slice(0, idx); buf = buf.slice(idx+2);
-        const line = block.split("\n").find(l => l.startsWith("data: ")); if (!line) continue;
-        try {
-          const evt = JSON.parse(line.slice(6));
-          if (evt.type === "task_id") { s.taskId = evt.task_id; }
-          else if (evt.type === "output") { chunks.push(evt.text); }
-          else if (evt.type === "step") { }
-          else if (evt.type === "status") {
-            const html = '<span class="dot">⏳</span> ' + evt.text;
-            s.statusHtml = html;
-            if (wfKey === curWf) document.getElementById("status").innerHTML = html;
-          }
-          else if (evt.type === "done") {
-            if (evt.session_id) { s.sessionId = evt.session_id; s.followupVisible = true; }
-            const md = evt.result || chunks.join("\n");
-            const div = document.createElement("div");
-            if (window.marked) div.innerHTML = marked.parse(md); else div.textContent = md;
-            div.className = "md";
-            if (wfKey === curWf) {
-              const out = document.getElementById("output");
-              if (out.textContent.startsWith("结果将在这里")) out.innerHTML = "";
-              out.appendChild(div);
-              if (evt.session_id) document.getElementById("followup").style.display = "block";
-              const dt = ((Date.now()-t0)/1000).toFixed(1);
-              document.getElementById("status").textContent = "✅ 完成 · " + dt + "s" + (s.sessionId ? " · 可追问" : "");
-              s.statusHtml = document.getElementById("status").innerHTML;
-              s.outputHtml = out.innerHTML;
-            } else {
-              const tmp = document.createElement("div");
-              if (window.marked) tmp.innerHTML = marked.parse(md); else tmp.textContent = md;
-              s.outputHtml = tmp.innerHTML;
-              const dt = ((Date.now()-t0)/1000).toFixed(1);
-              s.statusHtml = "✅ 完成 · " + dt + "s" + (s.sessionId ? " · 可追问" : "");
-            }
-          } else if (evt.type === "error") {
-            s.statusHtml = "❌ " + evt.error;
-            if (wfKey === curWf) document.getElementById("status").textContent = "❌ " + evt.error;
-          }
-        } catch(e) {}
-      }
-    }
-  } catch(e) {
-    s.statusHtml = "❌ " + e;
-    if (wfKey === curWf) document.getElementById("status").textContent = "❌ " + e;
-  }
-  s.running = false; s.taskId = null;
-  updateTabIndicator(wfKey, false);
-  if (wfKey === curWf) {
-    document.getElementById("runBtn").disabled = false;
-    document.getElementById("stopBtn").style.display = "none";
-  }
-  loadFiles();
-}
+        <div class="budget-card">
+          <div class="budget-title">
+            <div>
+              <strong>检索与深读预算</strong>
+              <p>范围宽窄由 IDEA 特征自适应判断；这里只设置成本边界。</p>
+            </div>
+            <select id="searchMode" aria-label="检索模式">
+              <option value="quick">快速</option>
+              <option value="standard" selected>标准</option>
+              <option value="deep">深度</option>
+            </select>
+          </div>
+          <div class="form-grid three">
+            <div>
+              <label for="candidateMax">候选上限</label>
+              <input id="candidateMax" type="number" min="10" max="500" value="80">
+            </div>
+            <div>
+              <label for="deepMin">深读下限</label>
+              <input id="deepMin" type="number" min="10" max="100" value="10">
+            </div>
+            <div>
+              <label for="deepMax">深读上限</label>
+              <input id="deepMax" type="number" min="10" max="100" value="20">
+            </div>
+          </div>
+          <p class="budget-note">不会用弱相关文献凑数；不足下限时明确降级为限制或不确定结论。</p>
+        </div>
 
-async function stopCurrent() {
-  const s = wfState[curWf];
-  if (!s.running || !s.taskId) return;
-  try {
-    await fetch("/api/stop?task_id=" + encodeURIComponent(s.taskId), {method:"POST"});
-  } catch(e) {}
-}
+        <div class="action-row">
+          <button id="submitRun" class="button primary" type="submit">开始受控评估</button>
+          <button id="cancelRun" class="button danger hidden" type="button">取消当前 Run</button>
+        </div>
+        <p id="formMessage" class="message" role="status"></p>
+      </form>
 
-async function loadConfig() {
-  try {
-    const r = await fetch("/api/config");
-    const c = await r.json();
-    if (!c.configured) document.getElementById("configOverlay").style.display = "block";
-    if (c.provider) document.getElementById("cfgProvider").value = c.provider;
-    if (c.model) document.getElementById("cfgModel").value = c.model;
-    if (c.baseURL) document.getElementById("cfgBaseURL").value = c.baseURL;
-    document.getElementById("model").value = (c.provider ? c.provider + "/" : "") + (c.model || "glm-5.2");
-  } catch(e) {}
-}
-function openConfig() { document.getElementById("configOverlay").style.display = "block"; }
-async function saveConfig() {
-  const body = {
-    provider: document.getElementById("cfgProvider").value,
-    baseURL: document.getElementById("cfgBaseURL").value,
-    apiKey: document.getElementById("cfgApiKey").value,
-    model: document.getElementById("cfgModel").value,
-  };
-  try {
-    const r = await fetch("/api/config", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-    const c = await r.json();
-    if (c.ok) {
-      document.getElementById("configOverlay").style.display = "none";
-      document.getElementById("model").value = c.model;
-      alert("✅ 配置成功！可以开始使用了。");
-    } else { alert("配置失败: " + (c.error || "未知错误")); }
-  } catch(e) { alert("请求失败: " + e); }
-}
-document.getElementById("input").placeholder = PLACEHOLDERS[curWf] || "";
-loadFiles();
-loadConfig();
-setInterval(() => { if (!anyRunning()) loadFiles(); }, 15000);
-</script>
+      <section class="progress-section">
+        <div class="progress-header">
+          <div>
+            <p class="section-kicker">HARNESS PROGRESS</p>
+            <h3 id="progressTitle">尚未运行</h3>
+          </div>
+          <span id="runStatus" class="status-pill neutral">—</span>
+        </div>
+        <div class="progress-track"><span id="progressBar"></span></div>
+        <ol id="stepList" class="step-list"></ol>
+      </section>
+
+      <section class="debug-section">
+        <div class="progress-header">
+          <div>
+            <p class="section-kicker">LIVE DEBUG TRACE</p>
+            <h3>运行调试</h3>
+          </div>
+          <span id="debugStatus" class="status-pill neutral">等待 Run</span>
+        </div>
+        <p id="debugSummary" class="debug-summary">开始评估后，这里会显示当前 Workflow、Tool Call、耗时和错误。</p>
+        <div id="debugTimeline" class="debug-timeline" aria-live="polite"></div>
+      </section>
+    </section>
+
+    <section class="panel result-panel">
+      <div class="panel-heading result-heading">
+        <div>
+          <p class="section-kicker">AUDITED OUTPUT</p>
+          <h2>评估结果</h2>
+        </div>
+        <div class="result-actions">
+          <button id="rerunBtn" class="button ghost hidden">重新运行</button>
+          <a id="markdownLink" class="button ghost hidden" href="#">导出 Markdown</a>
+          <button id="deleteRunBtn" class="button ghost danger-text hidden">删除 Run</button>
+        </div>
+      </div>
+
+      <div id="emptyResult" class="empty-state">
+        <div class="empty-mark">F1 → Fn</div>
+        <h3>选择历史 Run 或开始一次新评估</h3>
+        <p>最终结论、原文证据、检索限制与版本信息会保存在本地，可随时复查。</p>
+      </div>
+
+      <div id="reportView" class="hidden">
+        <div id="conclusionCard" class="conclusion-card"></div>
+        <nav id="resultTabs" class="tabs" aria-label="结果章节"></nav>
+        <div id="tabContent" class="tab-content"></div>
+      </div>
+    </section>
+  </main>
+
+  <template id="caseTemplate">
+    <article class="case-card">
+      <button class="case-main">
+        <strong class="case-name"></strong>
+        <span class="case-meta"></span>
+      </button>
+      <button class="case-delete" title="删除 Case">×</button>
+      <div class="run-list"></div>
+    </article>
+  </template>
+
+  <script src="/static/app.js" defer></script>
 </body>
 </html>

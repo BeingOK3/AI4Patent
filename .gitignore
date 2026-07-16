@@ -6,8 +6,8 @@ backend/__pycache__/
 
 config/opencode/opencode.json
 
-# Large binaries (downloaded, not source code)
-bin/opencode/opencode.exe
+# Downloaded engine binary
+bin/opencode/
 
 # Logs
 logs/
@@ -20,6 +20,7 @@ bin/*.err
 data/opencode/*.db
 data/opencode/*.db-shm
 data/opencode/*.db-wal
+data/ai4patent/
 
 # Secrets - API keys, NEVER commit
 data/opencode/auth.json

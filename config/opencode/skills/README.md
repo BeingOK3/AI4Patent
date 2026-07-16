@@ -1,6 +1,16 @@
 # 专利分析技能套件
 
-基于 opencode 平台的一套 AI 技能，覆盖专利分析常见场景：分类标引、深度剖析、侵权检索、PCT 评审、Idea 预审。
+基于 opencode 平台的一套 AI 技能。当前产品功能开关只启用受控 IDEA 评估；其他 Skill 保留为后续迁移素材，不在前端展示。
+
+## patent-idea-review — 受控 IDEA 专利评估（当前入口）
+
+**功能**：通过本地固定 Workflow 执行 IDEA 解析、Google Patents + EXA 双路检索、摘要筛选、至少 10 篇相关文献深读、证据矩阵、新颖性/创造性/价值、审计和报告留存。
+
+**输入**：技术方案、权利要求草稿或方案概述；可设置评估日、检索模式、候选上限和深读上下限。
+
+**输出**：持久 `report.json`、`report.md`、`manifest.json` 和 Case/Run 历史。可直接输出“具备新颖性”，但必须展示理由、证据范围、置信度与局限性。
+
+**执行要求**：只调用 `patent-idea-review/scripts/idea_workflow.py` 或对应 `/api/idea/*`；不得由模型自行模拟搜索。旧 `patent-IDEA-analyzer` 已归档，仅用于回归。
 
 ---
 
@@ -46,7 +56,7 @@
 
 ---
 
-## patent-IDEA-analyzer — Idea 胶片预审
+## patent-IDEA-analyzer — Idea 胶片预审（已归档）
 
 **功能**：在专利正式撰写前，对 Idea 胶片进行撰写质量检查与创新性分析，输出预审报告。
 
@@ -64,7 +74,7 @@
 
 ## 依赖配置
 
-专利检索和网页抓取依赖 Exa 搜索工具。在 `opencode.json` 中添加以下配置：
+新 IDEA Workflow 同时配置本地 Google Patents 与 EXA MCP，并由后端独立记录状态、合并去重和故障降级。EXA 配置示例：
 
 ```json
 {
@@ -77,7 +87,7 @@
 }
 ```
 
-若无 Exa，技能仍可运行，但外部信息检索功能受限，分类和侵权分析的准确度会下降。
+若 EXA 失效，本地 Google Patents 与 FIFO 缓存仍可继续；若本地网络失效，EXA 可继续。两路均失效时 Run 必须报告检索未完成，不能由模型补写结果。
 
 ---
 

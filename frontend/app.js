@@ -18,39 +18,66 @@ const MODE_DEFAULTS = {
   deep: { candidate_max: 150, deep_review_min: 20, deep_review_max: 40 },
 };
 
+const JUDGMENT_LABELS = {
+  FILE: "建议申请",
+  ADJUST_THEN_FILE: "调整后申请",
+  WATCH: "继续观察",
+  DO_NOT_FILE: "不建议申请",
+  INVENTIVE: "具备创造性",
+  NOT_INVENTIVE: "不具备创造性",
+  NEED_MORE_EVIDENCE: "需要更多证据",
+  UNCERTAIN: "结论不确定",
+  DISCLOSED: "已披露",
+  PARTIAL: "部分披露",
+  NOT_DISCLOSED: "未披露",
+  HIGH: "高相关",
+  MEDIUM: "中等相关",
+  LOW: "低相关",
+  ANALYZED: "已分析",
+  critical: "严重",
+  warning: "警告",
+  info: "信息",
+  YES: "有组合动机",
+  NO: "无组合动机",
+};
+
 const state = {
   cases: [],
   selectedCase: null,
   selectedRun: null,
   report: null,
   eventSource: null,
+  debugTimer: null,
   activeTab: "overview",
 };
 
 const $ = (id) => document.getElementById(id);
 
-function clearRuntimeApiKey() {
-  const input = $("apiToken");
-  if (input) input.value = "";
+function clearRuntimeApiConfig() {
+  for (const id of ["modelBaseUrl", "apiToken", "modelName"]) {
+    const input = $(id);
+    if (input) input.value = "";
+  }
 }
 
-window.addEventListener("pageshow", clearRuntimeApiKey);
-window.addEventListener("pagehide", clearRuntimeApiKey);
+window.addEventListener("pageshow", clearRuntimeApiConfig);
+window.addEventListener("pagehide", clearRuntimeApiConfig);
 
 document.addEventListener("DOMContentLoaded", async () => {
-  clearRuntimeApiKey();
+  clearRuntimeApiConfig();
   $("evaluationDate").value = new Date().toISOString().slice(0, 10);
   $("ideaText").addEventListener("input", () => {
     $("ideaCount").textContent = `${$("ideaText").value.length} 字符`;
   });
   $("searchMode").addEventListener("change", applyModeDefaults);
   $("runForm").addEventListener("submit", createRun);
-  $("newCaseBtn").addEventListener("click", clearCaseSelection);
+  $("newCaseBtn").addEventListener("click", resetWorkspace);
   $("cancelRun").addEventListener("click", cancelSelectedRun);
   $("rerunBtn").addEventListener("click", rerunSelected);
   $("deleteRunBtn").addEventListener("click", deleteSelectedRun);
   await Promise.all([loadHealth(), loadCases()]);
   renderEmptyProgress();
+  renderEmptyDebug();
 });
 
 async function api(path, options = {}) {
@@ -73,7 +100,7 @@ async function loadHealth() {
     $("healthDot").className = `health-dot ${health.ok ? "ok" : "bad"}`;
     const modelNeedsToken = health.components?.model?.status === "runtime_required";
     $("healthText").textContent = health.ok
-      ? (modelNeedsToken ? "核心服务就绪 · 等待本页 API Token" : "核心服务就绪")
+      ? (modelNeedsToken ? "核心服务就绪 · 等待本页模型 API 配置" : "核心服务就绪")
       : "服务降级";
     $("cacheText").textContent = `缓存 ${formatBytes(cache.total_bytes || 0)} / ${formatBytes(cache.max_bytes)}`;
   } catch (error) {
@@ -141,12 +168,43 @@ async function selectCase(caseId, render = true) {
   }
 }
 
-function clearCaseSelection() {
+function resetWorkspace() {
+  closeEvents();
+  stopDebugPolling();
   state.selectedCase = null;
-  $("caseTitle").value = "";
+  state.selectedRun = null;
+  state.report = null;
+  state.activeTab = "overview";
+  $("runForm").reset();
+  clearRuntimeApiConfig();
+  $("evaluationDate").value = new Date().toISOString().slice(0, 10);
+  $("searchMode").value = "standard";
+  applyModeDefaults();
+  $("ideaCount").textContent = "0 字符";
   $("activeCaseBadge").textContent = "将新建 Case";
   document.querySelectorAll(".case-card").forEach((item) => item.classList.remove("active"));
+  $("cancelRun").classList.add("hidden");
+  $("rerunBtn").classList.add("hidden");
+  $("deleteRunBtn").classList.add("hidden");
+  $("markdownLink").classList.add("hidden");
+  $("reportView").classList.add("hidden");
+  $("emptyResult").classList.remove("hidden");
+  $("emptyResult").querySelector("h3").textContent = "选择历史 Run 或开始一次新评估";
+  $("emptyResult").querySelector("p").textContent = "最终结论、原文证据、检索限制与版本信息会保存在本地，可随时复查。";
+  setMessage("");
+  renderEmptyProgress();
+  renderEmptyDebug();
   $("caseTitle").focus();
+}
+
+function runtimeModelPayload() {
+  const baseUrl = $("modelBaseUrl").value.trim();
+  const apiKey = $("apiToken").value.trim();
+  const model = $("modelName").value.trim();
+  if (!baseUrl) throw new Error("请输入模型 API Base URL");
+  if (!apiKey) throw new Error("请输入本页使用的 API Key");
+  if (!model) throw new Error("请输入模型名称");
+  return { base_url: baseUrl, api_key: apiKey, model };
 }
 
 async function createRun(event) {
@@ -155,8 +213,7 @@ async function createRun(event) {
   const submit = $("submitRun");
   submit.disabled = true;
   try {
-    const apiKey = $("apiToken").value.trim();
-    if (!apiKey) throw new Error("请输入本页使用的 API Token");
+    const runtimeModel = runtimeModelPayload();
     let caseId = state.selectedCase?.case_id;
     const caseTitle = $("caseTitle").value.trim();
     if (!caseId) {
@@ -169,7 +226,7 @@ async function createRun(event) {
       state.selectedCase = created;
     }
     const payload = {
-      api_key: apiKey,
+      ...runtimeModel,
       input_text: $("ideaText").value.trim(),
       evaluation_date: $("evaluationDate").value,
       date_basis: $("dateBasis").value.trim() || "用户指定或提交日",
@@ -198,6 +255,7 @@ async function createRun(event) {
 
 async function selectRun(runId) {
   closeEvents();
+  stopDebugPolling();
   const run = await api(`/api/idea/runs/${runId}`);
   state.report = null;
   $("reportView").classList.add("hidden");
@@ -212,6 +270,7 @@ async function activateRun(run) {
   state.selectedRun = run;
   renderProgress(run);
   renderRunActions(run);
+  startDebugPolling(run.run_id, !isTerminal(run.status));
   if (!isTerminal(run.status)) {
     state.report = null;
     $("reportView").classList.add("hidden");
@@ -233,6 +292,8 @@ function subscribeToRun(runId) {
     renderRunActions(message.data);
     if (message.type === "terminal") {
       closeEvents();
+      stopDebugPolling();
+      await loadDebug(runId);
       await loadCases(message.data.case_id);
       await loadReport(runId);
     }
@@ -246,6 +307,113 @@ function subscribeToRun(runId) {
 function closeEvents() {
   state.eventSource?.close();
   state.eventSource = null;
+}
+
+function startDebugPolling(runId, keepPolling = true) {
+  stopDebugPolling();
+  loadDebug(runId);
+  if (keepPolling) {
+    state.debugTimer = window.setInterval(() => loadDebug(runId), 1000);
+  }
+}
+
+function stopDebugPolling() {
+  if (state.debugTimer !== null) window.clearInterval(state.debugTimer);
+  state.debugTimer = null;
+}
+
+async function loadDebug(runId) {
+  if (!runId || state.selectedRun?.run_id !== runId) return;
+  try {
+    const trace = await api(`/api/idea/runs/${runId}/debug`);
+    if (state.selectedRun?.run_id !== runId) return;
+    renderDebug(trace);
+  } catch (error) {
+    $("debugStatus").textContent = "读取失败";
+    $("debugStatus").className = "status-pill failed";
+    $("debugSummary").textContent = error.message;
+  }
+}
+
+function renderDebug(trace) {
+  const current = trace.run.progress.current_step;
+  const calls = trace.tool_calls || [];
+  const events = trace.events || [];
+  $("debugStatus").textContent = statusLabel(trace.run.status);
+  $("debugStatus").className = `status-pill ${statusClass(trace.run.status)}`;
+  $("debugSummary").textContent = current
+    ? `当前 Workflow：${STEP_LABELS[current] || current} · 已记录 ${calls.length} 次 Tool Call`
+    : `Workflow 已结束 · 共记录 ${calls.length} 次 Tool Call`;
+
+  const root = $("debugTimeline");
+  root.replaceChildren();
+  const eventBlock = el("section", "debug-block");
+  eventBlock.append(el("h4", "", "最近运行事件"));
+  for (const event of events.slice(-16).reverse()) {
+    const card = el("article", "debug-entry");
+    card.append(
+      el("strong", "", debugEventLabel(event.event)),
+      el("time", "", formatTime(event.timestamp_ms)),
+      el("pre", "", formatDebugDetails(event.details)),
+    );
+    eventBlock.append(card);
+  }
+  if (!events.length) eventBlock.append(el("p", "small", "尚无 JSONL 运行事件。"));
+
+  const callBlock = el("section", "debug-block");
+  callBlock.append(el("h4", "", "Tool Calls"));
+  for (const call of calls.slice(-20).reverse()) {
+    const card = el("article", "debug-entry tool-entry");
+    const title = `${call.provider} · ${call.operation}`;
+    const summary = {
+      step: call.step_name,
+      status: call.status,
+      result_count: call.result_count,
+      duration_ms: call.duration_ms,
+      request: call.request,
+      response: call.response_summary,
+      error_code: call.error_code,
+      error_message: call.error_message,
+    };
+    card.append(
+      el("strong", "", title),
+      el("time", "", formatTime(call.created_at)),
+      el("pre", "", formatDebugDetails(summary)),
+    );
+    callBlock.append(card);
+  }
+  if (!calls.length) callBlock.append(el("p", "small", "尚未产生 Tool Call。"));
+  root.append(eventBlock, callBlock);
+}
+
+function renderEmptyDebug() {
+  $("debugStatus").textContent = "等待 Run";
+  $("debugStatus").className = "status-pill neutral";
+  $("debugSummary").textContent = "开始评估后，这里会显示当前 Workflow、Tool Call、耗时和错误。";
+  $("debugTimeline").replaceChildren();
+}
+
+function debugEventLabel(event) {
+  return ({
+    run_scheduled: "Run 已调度",
+    workflow_started: "Workflow 已开始",
+    workflow_step_started: "步骤开始",
+    workflow_step_completed: "步骤完成",
+    workflow_step_failed: "步骤失败",
+    tool_call_started: "Tool Call 开始",
+    tool_call_completed: "Tool Call 完成",
+    tool_call_failed: "Tool Call 失败",
+    workflow_finished: "Workflow 已结束",
+    workflow_failed: "Workflow 失败",
+    workflow_cancelled: "Workflow 已取消",
+    run_failed: "Run 失败",
+    run_cancelled: "Run 已取消",
+  })[event] || event;
+}
+
+function formatDebugDetails(details) {
+  if (!details || !Object.keys(details).length) return "—";
+  return JSON.stringify(details, null, 2);
 }
 
 function renderProgress(run) {
@@ -302,7 +470,7 @@ function renderReport() {
   card.className = `conclusion-card ${overview.novelty_code === "NOT_NOVEL" ? "not-novel" : overview.novelty_code === "UNCERTAIN" ? "uncertain" : ""}`;
   card.append(
     el("div", "conclusion-label", overview.novelty_label),
-    el("div", "conclusion-meta", `置信度 ${formatNumber(overview.novelty_confidence)} · 申请建议 ${overview.filing_recommendation}`),
+    el("div", "conclusion-meta", `置信度 ${formatNumber(overview.novelty_confidence)} · 申请建议 ${judgmentLabel(overview.filing_recommendation)}`),
     el("p", "conclusion-summary", overview.executive_summary),
   );
   const tabs = [
@@ -365,10 +533,10 @@ function renderSearch(root, report) {
   for (const doc of report.deep_review_documents) {
     const card = el("article", "doc-card");
     const header = el("header");
-    header.append(el("strong", "", doc.publication_number), tag(doc.relevance || "ANALYZED"));
+    header.append(patentLink(doc.publication_number, doc.url), tag(doc.relevance || "ANALYZED"));
     card.append(header, el("p", "", doc.title || "无标题"), el("span", "small", `${doc.publication_date || "日期未知"} · ${doc.assignee || "申请人未知"}`));
     const mappings = el("div");
-    for (const mapping of doc.feature_mappings) mappings.append(tag(`${mapping.feature_id} ${mapping.status}`, mapping.status));
+    for (const mapping of doc.feature_mappings) mappings.append(tag(`${mapping.feature_id} ${judgmentLabel(mapping.status)}`, mapping.status));
     card.append(mappings);
     docs.append(card);
   }
@@ -380,15 +548,15 @@ function renderNovelty(root, report) {
   root.append(section("裁决理由", novelty.rationale));
   const facts = el("div", "fact-grid");
   facts.append(
-    fact("最接近文献", novelty.closest_publication_number),
-    fact("破坏性文献", novelty.destroying_publication_number || "无"),
+    fact("最接近文献", patentLink(novelty.closest_publication_number)),
+    fact("破坏性文献", novelty.destroying_publication_number ? patentLink(novelty.destroying_publication_number) : "无"),
     fact("缺失特征", novelty.missing_features.join(", ") || "无"),
   );
   root.append(facts, el("div", "section-block"));
   const table = makeTable(["单篇文献", "逐特征覆盖", "破坏新颖性"]);
   for (const matrix of novelty.matrices) {
-    const mappings = matrix.mappings.map((item) => `${item.feature_id}:${item.status}`).join(" · ");
-    addRow(table, [matrix.publication_number, mappings, matrix.destroys_novelty ? "是" : "否"]);
+    const mappings = matrix.mappings.map((item) => `${item.feature_id}:${judgmentLabel(item.status)}`).join(" · ");
+    addRow(table, [patentLink(matrix.publication_number), mappings, matrix.destroys_novelty ? "是" : "否"]);
   }
   root.append(table);
 }
@@ -401,10 +569,23 @@ function renderInventive(root, report) {
   for (const route of report.inventiveness) {
     const card = el("article", "route-card");
     const header = el("header");
-    header.append(el("strong", "", `${route.route_id} · D1 ${route.d1_publication_number}`), tag(route.status, route.status));
+    const routeTitle = el("strong");
+    routeTitle.append(document.createTextNode(`${route.route_id} · D1 `), patentLink(route.d1_publication_number));
+    header.append(routeTitle, tag(route.status, route.status));
     card.append(header, el("p", "", route.objective_technical_problem), el("p", "small", route.overall_rationale));
     for (const item of route.distinguishing_features) {
-      card.append(el("p", "", `${item.feature_id}：D2 ${item.d2_publication_numbers.join(", ") || "无"} · 组合动机 ${item.motivation_to_combine}`));
+      const detail = el("p");
+      detail.append(document.createTextNode(`${item.feature_id}：D2 `));
+      if (item.d2_publication_numbers.length) {
+        item.d2_publication_numbers.forEach((number, index) => {
+          if (index) detail.append(document.createTextNode("、"));
+          detail.append(patentLink(number));
+        });
+      } else {
+        detail.append(document.createTextNode("无"));
+      }
+      detail.append(document.createTextNode(` · 组合动机：${judgmentLabel(item.motivation_to_combine)}`));
+      card.append(detail);
     }
     root.append(card);
   }
@@ -417,7 +598,7 @@ function renderValue(root, report) {
     valueFact("可取证性", value.detectability), valueFact("规避难度", value.workaround_difficulty),
     valueFact("技术/市场价值", value.technical_market_value),
   );
-  root.append(grid, section("申请建议", `${value.recommendation}：${value.rationale}`));
+  root.append(grid, section("申请建议", `${judgmentLabel(value.recommendation)}：${value.rationale}`));
   const paths = el("ul", "limitation-list");
   for (const path of value.alternative_paths) paths.append(el("li", "", path));
   const block = el("div", "section-block");
@@ -428,7 +609,7 @@ function renderValue(root, report) {
 function renderAudit(root, report) {
   const counts = report.audit.counts;
   const facts = el("div", "fact-grid");
-  facts.append(fact("Critical", counts.critical), fact("Warning", counts.warning), fact("Info", counts.info));
+  facts.append(fact("严重", counts.critical), fact("警告", counts.warning), fact("信息", counts.info));
   root.append(facts, el("div", "section-block"));
   for (const finding of report.audit.findings) {
     const item = el("article", "finding");
@@ -436,7 +617,7 @@ function renderAudit(root, report) {
     root.append(item);
   }
   const limitations = el("ul", "limitation-list");
-  for (const item of report.limitations) limitations.append(el("li", "", `${item.code || "LIMITATION"}：${item.message || JSON.stringify(item)}`));
+  for (const item of report.limitations) limitations.append(el("li", "", limitationText(item)));
   const block = el("div", "section-block");
   block.append(el("h3", "", "检索与分析局限"), limitations);
   root.append(block);
@@ -450,16 +631,11 @@ async function cancelSelectedRun() {
 
 async function rerunSelected() {
   if (!state.selectedRun) return;
-  const apiKey = $("apiToken").value.trim();
-  if (!apiKey) {
-    setMessage("重新运行前，请输入本页使用的 API Token");
-    $("apiToken").focus();
-    return;
-  }
   try {
+    const runtimeModel = runtimeModelPayload();
     const run = await api(`/api/idea/runs/${state.selectedRun.run_id}/rerun`, {
       method: "POST",
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify(runtimeModel),
     });
     await loadCases(run.case_id);
     await activateRun(run);
@@ -474,11 +650,13 @@ async function deleteSelectedRun() {
   const caseId = state.selectedRun.case_id;
   await api(`/api/idea/runs/${state.selectedRun.run_id}`, { method: "DELETE", body: "{}" });
   closeEvents();
+  stopDebugPolling();
   state.selectedRun = null;
   state.report = null;
   $("reportView").classList.add("hidden");
   $("emptyResult").classList.remove("hidden");
   renderEmptyProgress();
+  renderEmptyDebug();
   await loadCases(caseId);
 }
 
@@ -487,6 +665,7 @@ async function deleteCase(caseId, title) {
   await api(`/api/idea/cases/${caseId}`, { method: "DELETE", body: "{}" });
   if (state.selectedCase?.case_id === caseId) {
     closeEvents();
+    stopDebugPolling();
     state.selectedCase = null;
     state.selectedRun = null;
     state.report = null;
@@ -494,6 +673,7 @@ async function deleteCase(caseId, title) {
     $("reportView").classList.add("hidden");
     $("emptyResult").classList.remove("hidden");
     renderEmptyProgress();
+    renderEmptyDebug();
   }
   await loadCases();
 }
@@ -513,12 +693,16 @@ function section(title, text) {
 
 function fact(label, value) {
   const item = el("div", "fact");
-  item.append(el("span", "", label), el("strong", "", String(value ?? "—")));
+  const content = el("strong");
+  if (value instanceof Node) content.append(value);
+  else content.textContent = String(value ?? "—");
+  item.append(el("span", "", label), content);
   return item;
 }
 
 function valueFact(label, dimension) {
-  const item = fact(label, dimension.rating);
+  const score = ({ LOW: 1, MEDIUM: 3, HIGH: 5 })[dimension.rating] ?? dimension.rating;
+  const item = fact(label, `${score}/5`);
   item.append(el("p", "small", dimension.rationale));
   return item;
 }
@@ -535,12 +719,54 @@ function makeTable(headers) {
 
 function addRow(table, values) {
   const row = document.createElement("tr");
-  values.forEach((value) => row.append(el("td", "", String(value ?? "—"))));
+  values.forEach((value) => {
+    const cell = el("td");
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = String(value ?? "—");
+    row.append(cell);
+  });
   table.querySelector("tbody").append(row);
 }
 
 function tag(text, kind = text) {
-  return el("span", `tag ${String(kind).toLowerCase().replaceAll("_", "-")}`, text);
+  return el("span", `tag ${String(kind).toLowerCase().replaceAll("_", "-")}`, judgmentLabel(text));
+}
+
+function judgmentLabel(value) {
+  return JUDGMENT_LABELS[value] || value;
+}
+
+function patentLink(publicationNumber, explicitUrl = null) {
+  const number = String(publicationNumber || "").trim();
+  const link = el("a", "patent-link", number || "未标准化");
+  link.href = safePatentUrl(number, explicitUrl);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.title = `打开专利 ${number}`;
+  return link;
+}
+
+function safePatentUrl(publicationNumber, explicitUrl) {
+  if (explicitUrl) {
+    try {
+      const parsed = new URL(explicitUrl, window.location.origin);
+      if (["http:", "https:"].includes(parsed.protocol)) return parsed.href;
+    } catch (_) {
+      // Fall through to a deterministic public patent URL.
+    }
+  }
+  const compact = publicationNumber.replaceAll(" ", "").toUpperCase();
+  const language = compact.startsWith("CN") ? "zh" : "en";
+  return `https://patents.google.com/patent/${encodeURIComponent(compact)}/${language}`;
+}
+
+function limitationText(item) {
+  const code = item?.code || "LIMITATION";
+  if (item?.message) return `${code}：${item.message}`;
+  if (code === "PROVIDER_DEGRADED") return `${code}：检索服务 ${item.provider} 本次调用全部失败，已按降级路径继续。`;
+  if (code === "DOCUMENT_FETCH_FAILED") return `${code}：专利 ${item.publication_number || "未知"} 的全文抓取失败。`;
+  if (code === "DEEP_REVIEW_FETCHED_BELOW_MINIMUM") return `${code}：成功获取 ${item.fetched} 篇全文，低于要求的 ${item.required} 篇。`;
+  return `${code}：${JSON.stringify(item)}`;
 }
 
 function el(tagName, className = "", text) {
@@ -560,6 +786,17 @@ function statusClass(status = "") {
   if (value === "queued") return "neutral";
   if (value === "completed_with_limitations") return "completed";
   return value;
+}
+
+function statusLabel(status = "") {
+  return ({
+    QUEUED: "排队中",
+    RUNNING: "运行中",
+    COMPLETED: "已完成",
+    COMPLETED_WITH_LIMITATIONS: "完成但有限制",
+    FAILED: "失败",
+    CANCELLED: "已取消",
+  })[status] || status || "—";
 }
 
 function isTerminal(status) {

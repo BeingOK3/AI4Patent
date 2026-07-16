@@ -9,7 +9,9 @@ AI4Patent 当前只对外启用“专利 IDEA 评估”。系统把检索、全�
 - 先基于标题/摘要和中英双语概念组筛选，再对相关候选读取全文；深读下限固定为 10 篇。
 - 新颖性遵守单篇文献原则，可直接输出“具备新颖性”，同时给出置信度、最接近文献、缺失特征、检索范围和局限。
 - 创造性、价值、模拟审查意见和证据审计均使用严格 JSON Schema；模型不能伪造 evidence ID。
+- 价值维度使用 1–5 分制；面向用户的判断文字统一为中文，报告中的专利公开号可直接打开原文。
 - Case/Run、输入快照、报告和 Manifest 持久保存；历史不自动删除，只支持用户手动删除。
+- 页面实时显示 Workflow 步骤和 Tool Call；详细事件追加到 Git 忽略的 JSONL 调试日志。
 - 可重建缓存使用 1 GiB 上限和 FIFO 清理，不会清理 Case/Run 权威结果。
 
 ## 快速开始
@@ -22,7 +24,7 @@ cd AI4Patent
 ./install.sh
 ```
 
-模型地址、模型名、存储、缓存、Provider 和检索预算统一配置在 `config/ai4patent.json`。API Token 不写入配置文件、数据库、历史、日志或浏览器存储。
+存储、缓存、检索 Provider 和预算统一配置在 `config/ai4patent.json`。每个网页 Run 的模型 Base URL、API Key 和 Model 由使用者临时输入；API Key 不写入配置文件、数据库、历史、日志或浏览器存储。
 
 启动服务：
 
@@ -31,7 +33,7 @@ cd AI4Patent
 # 浏览器访问 http://localhost:8001
 ```
 
-打开页面后，在“API Token（本页临时使用）”中输入自己的 Token。Token 只在当前页面和对应 Run 的进程内存中使用；刷新、关闭或重新进入页面后输入框会清空，必须重新输入。
+打开页面后，在“模型 API（本页临时使用）”中输入自己的 Base URL、API Key 和 Model。三项内容在刷新、关闭、重新进入页面或点击左侧“＋”后都会清空；API Key 只在当前页面和对应 Run 的进程内存中使用。
 
 开发模式与停止：
 
@@ -45,9 +47,9 @@ cd AI4Patent
 网页为三栏 IDEA 工作区：
 
 1. 左侧查看共享 Case/Run 历史和终态。
-2. 中间输入本页临时 API Token 和技术方案，选择评估日、quick/standard/deep、候选上限和深读上下限。
-3. 运行中查看 11 步持久进度；刷新或断线后可恢复。
-4. 右侧查看新颖性、创造性、价值、审计、Provider 状态和限制，并可导出 Markdown。
+2. 中间输入本页临时 Base URL、API Key、Model 和技术方案，选择评估日、quick/standard/deep、候选上限和深读上下限。
+3. 运行中查看 11 步持久进度，以及实时 Workflow、Tool Call、耗时、结果数和错误；刷新或断线后可从持久状态恢复显示。
+4. 右侧查看中文新颖性、创造性、1–5 分价值、审计、Provider 状态和限制；专利号可打开原文，并可导出 Markdown。
 
 默认检索预算：
 
@@ -72,6 +74,8 @@ export DEEPSEEK_API_KEY='your-key'
 config/opencode/skills/patent-idea-review/scripts/idea_workflow.py health
 
 config/opencode/skills/patent-idea-review/scripts/idea_workflow.py run \
+  --model-base-url https://api.deepseek.com \
+  --model deepseek-v4-flash \
   --idea '一种具体的技术方案……' \
   --evaluation-date 2026-07-16 \
   --mode quick \
@@ -98,6 +102,8 @@ CLI 只有在 Run 到达成功终态后才返回报告；失败、取消、健�
 ```bash
 curl http://127.0.0.1:8001/api/system/health
 curl http://127.0.0.1:8001/api/system/cache
+# 将 RUN_ID 替换为实际值，查看持久步骤、Tool Call 和 JSONL 事件
+curl http://127.0.0.1:8001/api/idea/runs/RUN_ID/debug
 ```
 
 ## 测试
@@ -121,6 +127,7 @@ config/opencode/AGENTS.md  OpenCode 强制路由
 config/opencode/skills/    薄 IDEA Skill 与归档 Skill
 data/ai4patent/            SQLite 运行数据（Git 忽略）
 workspace/idea-runs/       不可自动删除的 Run 输入与报告（Git 忽略）
+workspace/debug/idea-runs/  逐 Run JSONL 调试日志（Git 忽略，不记录 API Key）
 workspace/cache/           1 GiB FIFO 可重建缓存（Git 忽略）
 docs/                      技术设计与只追加开发日志
 ```

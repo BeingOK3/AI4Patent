@@ -9,13 +9,14 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator, model_validator
 
 from .config import AppConfig, SearchMode
 from .database import Database
 from .execution import WorkflowExecutor
-from .model_client import runtime_api_key
+from .model_client import RuntimeModelConfig, runtime_model_config
 from .run_store import RunStore
+from .runtime_debug import RunDebugLog
 from .workflow import TERMINAL_RUN_STATUSES, WorkflowHarness
 
 
@@ -50,8 +51,42 @@ class RunSettings(ApiModel):
         return self
 
 
-class CreateRunRequest(ApiModel):
+class RuntimeModelRequest(ApiModel):
     api_key: SecretStr
+    base_url: HttpUrl
+    model: str = Field(min_length=1, max_length=200)
+
+    @field_validator("api_key")
+    @classmethod
+    def nonempty_api_key(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("api_key must not be blank")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def normalized_model(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("model must not be blank")
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def safe_base_url(cls, value: HttpUrl) -> HttpUrl:
+        if value.username or value.password or value.query or value.fragment:
+            raise ValueError("base_url must not contain credentials, query, or fragment")
+        return value
+
+    def runtime_config(self) -> RuntimeModelConfig:
+        return RuntimeModelConfig(
+            base_url=str(self.base_url).rstrip("/"),
+            api_key=self.api_key.get_secret_value(),
+            model=self.model,
+        )
+
+
+class CreateRunRequest(RuntimeModelRequest):
     input_text: str = Field(min_length=10, max_length=200_000)
     evaluation_date: date = Field(default_factory=date.today)
     date_basis: str = Field(default="用户指定或提交日", min_length=1, max_length=200)
@@ -59,27 +94,9 @@ class CreateRunRequest(ApiModel):
     settings: RunSettings = Field(default_factory=RunSettings)
     attachment_names: list[str] = Field(default_factory=list, max_length=20)
 
-    @field_validator("api_key")
-    @classmethod
-    def nonempty_api_key(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value().strip():
-            raise ValueError("api_key must not be blank")
-        return value
-
 
 class DeleteRequest(ApiModel):
     operator_label: str | None = Field(default=None, max_length=100)
-
-
-class RuntimeCredentialRequest(ApiModel):
-    api_key: SecretStr
-
-    @field_validator("api_key")
-    @classmethod
-    def nonempty_api_key(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value().strip():
-            raise ValueError("api_key must not be blank")
-        return value
 
 
 class RunTaskManager:
@@ -88,32 +105,41 @@ class RunTaskManager:
         database: Database,
         harness: WorkflowHarness,
         executor: WorkflowExecutor,
+        debug_log: RunDebugLog | None = None,
     ):
         self.database = database
         self.harness = harness
         self.executor = executor
+        self.debug_log = debug_log
         self.tasks: dict[str, asyncio.Task] = {}
-        self._api_keys: dict[str, str] = {}
+        self._runtime_configs: dict[str, RuntimeModelConfig] = {}
 
-    def start(self, run_id: str, *, api_key: str | None = None) -> bool:
+    def start(self, run_id: str, *, runtime_config: RuntimeModelConfig | None = None) -> bool:
         run = self.database.get_run(run_id)
         if run["status"] in TERMINAL_RUN_STATUSES:
             return False
         existing = self.tasks.get(run_id)
         if existing and not existing.done():
             return False
-        value = (api_key or self._api_keys.get(run_id) or "").strip()
-        if not value:
+        value = runtime_config or self._runtime_configs.get(run_id)
+        if value is None:
             return False
-        self._api_keys[run_id] = value
+        self._runtime_configs[run_id] = value
+        if self.debug_log:
+            self.debug_log.append(
+                run_id,
+                "run_scheduled",
+                model=value.model,
+                base_url=value.base_url,
+            )
         task = asyncio.create_task(self._run(run_id), name=f"idea-run:{run_id}")
         self.tasks[run_id] = task
         return True
 
     async def _run(self, run_id: str) -> None:
         try:
-            api_key = self._api_keys.get(run_id)
-            if not api_key:
+            config = self._runtime_configs.get(run_id)
+            if not config:
                 self.database.set_run_status(
                     run_id,
                     "FAILED",
@@ -121,7 +147,7 @@ class RunTaskManager:
                     error_message="本次 Run 的临时 API Token 已不可用，请重新输入后重跑。",
                 )
                 return
-            with runtime_api_key(api_key):
+            with runtime_model_config(config):
                 await self.executor.execute(run_id)
         except asyncio.CancelledError:
             raise
@@ -134,11 +160,18 @@ class RunTaskManager:
                     error_code=type(exc).__name__,
                     error_message=str(exc),
                 )
+            if self.debug_log:
+                self.debug_log.append(
+                    run_id,
+                    "run_failed",
+                    error_code=type(exc).__name__,
+                    error_message=str(exc)[:1000],
+                )
         finally:
             current = self.tasks.get(run_id)
             if current is asyncio.current_task():
                 self.tasks.pop(run_id, None)
-            self._api_keys.pop(run_id, None)
+            self._runtime_configs.pop(run_id, None)
 
     async def cancel(self, run_id: str) -> bool:
         run = self.database.get_run(run_id)
@@ -152,7 +185,9 @@ class RunTaskManager:
         run = self.database.get_run(run_id)
         if run["status"] not in TERMINAL_RUN_STATUSES:
             self.harness.cancel_run(run_id)
-        self._api_keys.pop(run_id, None)
+        self._runtime_configs.pop(run_id, None)
+        if self.debug_log:
+            self.debug_log.append(run_id, "run_cancelled")
         return True
 
     def resume_incomplete(self) -> list[str]:
@@ -172,12 +207,24 @@ class RunTaskManager:
         return failed
 
 
+def _run_config_snapshot(config: AppConfig, request: RuntimeModelRequest) -> dict[str, Any]:
+    snapshot = config.snapshot()
+    snapshot["model"] = {
+        **snapshot["model"],
+        "default": request.model,
+        "base_url": str(request.base_url).rstrip("/"),
+        "credential_source": "per_run_memory",
+    }
+    return snapshot
+
+
 def create_idea_router(
     config: AppConfig,
     database: Database,
     run_store: RunStore,
     harness: WorkflowHarness,
     manager: RunTaskManager,
+    debug_log: RunDebugLog | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/idea", tags=["IDEA"])
 
@@ -207,16 +254,16 @@ def create_idea_router(
                 evaluation_date=request.evaluation_date.isoformat(),
                 date_basis=request.date_basis,
                 analysis_scope=request.analysis_scope,
-                model=config.model.default,
+                model=request.model,
                 skill_version="patent-idea-review/2.0.0",
                 workflow_version="idea-workflow/2.0.0",
-                config_snapshot=config.snapshot(),
+                config_snapshot=_run_config_snapshot(config, request),
                 attachments=attachments,
                 settings=request.settings.model_dump(mode="json", exclude_none=True),
             )
         except KeyError:
             raise HTTPException(404, "case not found")
-        manager.start(run["run_id"], api_key=request.api_key.get_secret_value())
+        manager.start(run["run_id"], runtime_config=request.runtime_config())
         return _run_view(database, harness, run["run_id"])
 
     @router.get("/runs/{run_id}")
@@ -225,6 +272,46 @@ def create_idea_router(
             return _run_view(database, harness, run_id)
         except KeyError:
             raise HTTPException(404, "run not found")
+
+    @router.get("/runs/{run_id}/debug")
+    async def get_run_debug(run_id: str):
+        try:
+            run_view = _run_view(database, harness, run_id)
+        except KeyError:
+            raise HTTPException(404, "run not found")
+        with database.connect() as connection:
+            step_rows = connection.execute(
+                """SELECT step_name,attempt,status,input_hash,output_hash,error_code,
+                          error_message,started_at,completed_at
+                   FROM run_steps WHERE run_id = ? ORDER BY step_id""",
+                (run_id,),
+            ).fetchall()
+            call_rows = connection.execute(
+                """SELECT call_id,step_name,provider,operation,request_json,
+                          response_summary_json,result_count,duration_ms,status,
+                          error_code,error_message,created_at
+                   FROM tool_calls WHERE run_id = ? ORDER BY created_at,call_id""",
+                (run_id,),
+            ).fetchall()
+        tool_calls = []
+        for row in call_rows:
+            item = dict(row)
+            item["request"] = _safe_json(item.pop("request_json"), {})
+            item["response_summary"] = _safe_json(
+                item.pop("response_summary_json"), None
+            )
+            tool_calls.append(RunDebugLog.sanitize(item))
+        return {
+            "run": run_view,
+            "steps": [RunDebugLog.sanitize(dict(row)) for row in step_rows],
+            "tool_calls": tool_calls,
+            "events": debug_log.read(run_id) if debug_log else [],
+            "log_storage": {
+                "git_ignored": True,
+                "format": "jsonl",
+                "file": f"workspace/debug/idea-runs/{run_id}.jsonl",
+            },
+        }
 
     @router.get("/runs/{run_id}/events")
     async def run_events(run_id: str):
@@ -265,7 +352,7 @@ def create_idea_router(
         return {"run_id": run_id, "cancelled": cancelled, "status": database.get_run(run_id)["status"]}
 
     @router.post("/runs/{run_id}/rerun")
-    async def rerun(run_id: str, request: RuntimeCredentialRequest):
+    async def rerun(run_id: str, request: RuntimeModelRequest):
         try:
             source = database.get_run(run_id)
         except KeyError:
@@ -285,15 +372,15 @@ def create_idea_router(
             evaluation_date=source["evaluation_date"],
             date_basis=source["date_basis"],
             analysis_scope=source["analysis_scope"],
-            model=config.model.default,
+            model=request.model,
             skill_version="patent-idea-review/2.0.0",
             workflow_version="idea-workflow/2.0.0",
-            config_snapshot=config.snapshot(),
+            config_snapshot=_run_config_snapshot(config, request),
             attachments=rerun_attachments,
             settings=source["settings_json"],
             parent_run_id=run_id,
         )
-        manager.start(new_run["run_id"], api_key=request.api_key.get_secret_value())
+        manager.start(new_run["run_id"], runtime_config=request.runtime_config())
         return _run_view(database, harness, new_run["run_id"])
 
     @router.get("/runs/{run_id}/report")
@@ -405,6 +492,7 @@ def _validate_run_settings(config: AppConfig, settings: RunSettings) -> None:
 def _run_view(database: Database, harness: WorkflowHarness, run_id: str) -> dict[str, Any]:
     run = database.get_run(run_id)
     progress = harness.progress(run_id)
+    model_snapshot = run["config_snapshot"].get("model", {})
     return {
         "run_id": run_id,
         "case_id": run["case_id"],
@@ -412,6 +500,8 @@ def _run_view(database: Database, harness: WorkflowHarness, run_id: str) -> dict
         "status": run["status"],
         "evaluation_date": run["evaluation_date"],
         "analysis_scope": run["analysis_scope"],
+        "model": run["model"],
+        "base_url": model_snapshot.get("base_url"),
         "settings": run["settings_json"],
         "limitations": run["limitation_json"],
         "created_at": run["created_at"],
@@ -425,3 +515,12 @@ def _run_view(database: Database, harness: WorkflowHarness, run_id: str) -> dict
 
 def _sse(value: dict[str, Any]) -> str:
     return f"data: {json.dumps(value, ensure_ascii=False)}\n\n"
+
+
+def _safe_json(value: str | None, default: Any) -> Any:
+    if value is None:
+        return default
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return default

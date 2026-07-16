@@ -101,6 +101,8 @@ class SkillWorkflowCliTests(unittest.TestCase):
         try:
             result = self.run_cli(
                 "run", "--case-title", "Cache", "--idea-file", idea_path,
+                "--model-base-url", "https://runtime.example.test/v1",
+                "--model", "runtime-model",
                 "--mode", "standard", "--candidate-max", "80", "--deep-min", "10",
                 "--deep-max", "20", "--poll", "0.01", "--timeout", "1",
             )
@@ -120,6 +122,8 @@ class SkillWorkflowCliTests(unittest.TestCase):
         self.assertEqual(run_body["settings"]["deep_review_min"], 10)
         self.assertEqual(run_body["settings"]["candidate_max"], 80)
         self.assertEqual(run_body["api_key"], "fixture-runtime-token")
+        self.assertEqual(run_body["base_url"], "https://runtime.example.test/v1")
+        self.assertEqual(run_body["model"], "runtime-model")
         self.assertNotIn("fixture-runtime-token", result.stdout)
         self.assertNotIn("fixture-runtime-token", result.stderr)
 
@@ -133,6 +137,10 @@ class SkillWorkflowCliTests(unittest.TestCase):
                 "start",
                 "--idea",
                 "long enough technical idea",
+                "--model-base-url",
+                "https://runtime.example.test/v1",
+                "--model",
+                "runtime-model",
                 "--base-url",
                 self.base_url,
             ],
@@ -151,13 +159,19 @@ class SkillWorkflowCliTests(unittest.TestCase):
         self.assertFalse(json.loads(result.stdout)["ok"])
 
     def test_invalid_idea_does_not_create_an_orphan_case(self) -> None:
-        result = self.run_cli("start", "--case-title", "Bad", "--idea", "short")
+        result = self.run_cli(
+            "start", "--case-title", "Bad", "--idea", "short",
+            "--model-base-url", "https://runtime.example.test/v1",
+            "--model", "runtime-model",
+        )
         self.assertEqual(result.returncode, 3)
         self.assertEqual(FixtureHandler.calls, [])
 
     def test_invalid_budget_does_not_create_an_orphan_case(self) -> None:
         result = self.run_cli(
-            "start", "--idea", "long enough technical idea", "--deep-min", "9"
+            "start", "--idea", "long enough technical idea", "--deep-min", "9",
+            "--model-base-url", "https://runtime.example.test/v1",
+            "--model", "runtime-model",
         )
         self.assertEqual(result.returncode, 3)
         self.assertEqual(FixtureHandler.calls, [])

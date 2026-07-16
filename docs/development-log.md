@@ -398,3 +398,19 @@
 - 测试：新增/调整 API、Task Manager、模型上下文、健康、前端和 Skill CLI 回归；定向 33 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q` 共 154 项通过；`node --check frontend/app.js`、`compileall`、主应用 OpenAPI 必填字段及旧接口缺失检查、`git diff --check` 全部通过。
 - 提交主题：`feat(idea): [IDEA-BYOK-001] require ephemeral per-page API keys`
 - 已知限制：页面关闭或刷新不会中止已在同一后端进程执行的 Run，因为该 Run 的临时 Token 会保留到终态；后端进程重启后无法继续原 Run，这是“不持久化使用者 Token”的有意安全边界。
+
+## 2026-07-16 — IDEA-UXOBS-001
+
+- 类型：空白工作区重置、完整 BYOK 模型坐标、实时可观测性与结果本地化。
+- 目标：修复“＋”只取消 Case 选择但残留表单/结果的问题；让每个 Run 真正使用用户输入的 Base URL、API Key 和 Model；在页面实时显示 Workflow 与 Tool Call；提升专利链接、中文判断和价值评分的可用性。
+- 同页重置：点击左侧“＋”后停止当前页面的 SSE/调试轮询但不取消后台 Run，清空 Case、IDEA、三项模型配置、选中 Run、结果、消息、进度与调试面板，日期和检索预算恢复默认值；历史列表继续保留。
+- 字段语义：Case 名称新增“同一方案多次 Run 的历史分组、不参与模型判断”说明；“评估日”明确为实际专利公开截止日，“评估日依据”明确为只供报告追溯、不改变计算的来源说明。
+- 完整 BYOK：创建/重跑请求严格要求 `base_url + api_key + model`；禁止 Base URL 携带 userinfo、query 或 fragment；三项配置通过 Run 级 `ContextVar` 隔离，模型请求的 URL、Bearer Key 和 payload model 均来自本次页面输入。API Key 只在 Task Manager 内存中保存到终态，Base URL 与 Model 作为非凭证 Run provenance 保存；CLI 同样必须显式提供 Base URL 与 Model，Key 只从指定环境变量读取。
+- 运行调试：新增 `RunDebugLog`，逐 Run 追加 Workflow 开始/步骤 attempt/结束、结构化模型调用、检索/全文 Provider 调用、耗时、结果数、usage 和错误摘要到 `workspace/debug/idea-runs/{run_id}.jsonl`；目录已由现有 `workspace/` 规则整体 Git 忽略。日志写入和读取均做敏感字段递归脱敏，不记录 API Key、Authorization、完整 Prompt、完整用户输入或完整模型输出。
+- 调试 API/UI：新增 `GET /api/idea/runs/{run_id}/debug`，聚合持久 `run_steps`、`tool_calls` 和 JSONL 事件；页面每秒刷新当前 Workflow、最近事件及 Tool Call 的 Provider、operation、状态、结果数、耗时和错误，Run 终态后停止轮询并保留最后快照。
+- 结果体验：深读文献、最接近/破坏性文献、新颖性矩阵及创造性 D1/D2 的公开号均变为安全新标签页链接，优先使用持久 URL、否则构造 Google Patents URL；枚举型判断、申请建议、组合动机和审计等级在 UI 映射为中文；所有 Agent 的面向用户说明统一要求简体中文，确定性审计和常见限制消息同步中文化。
+- 价值评分：`ValueDimension.rating` 从 `LOW/MEDIUM/HIGH` 改为严格整数 1–5，提示词写明各档含义及“规避难度高分表示更难绕开”；前端显示 `n/5`。旧报告保持 Manifest 不可变，展示时兼容折算 `LOW=1、MEDIUM=3、HIGH=5`。
+- 文档：同步更新 README、技术设计、Skill、Workflow API 与报告字段参考；明确三项逐页输入、调试日志安全边界和 1–5 分制。
+- 测试：改动定向 47 项全部通过；新增 JSONL 追加/脱敏/路径约束测试；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q` 共 159 项全部通过；`compileall`、`node --check frontend/app.js`、`git diff --check` 通过。使用 `/tmp` 隔离数据库在 `127.0.0.1:8127` 启动真实 Uvicorn，首页三项输入和调试面板、OpenAPI 三项必填、调试路由、`runtime_required` 健康语义均通过，随后正常停机且未调用外部模型。
+- 提交主题：`feat(idea): [IDEA-UXOBS-001] add runtime config and live debug UX`
+- 已知限制：调试面板展示安全摘要而非完整 Prompt/模型全文，这是防止凭证和大文本泄漏的有意边界；旧三档历史报告只做 UI 兼容折算，不改写原报告或 Manifest。

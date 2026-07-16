@@ -201,7 +201,7 @@ class InventiveStepOutput(AgentModel):
 
 
 class ValueDimension(AgentModel):
-    rating: Literal["HIGH", "MEDIUM", "LOW"]
+    rating: int = Field(ge=1, le=5)
     rationale: str
     evidence_basis: list[str] = []
 

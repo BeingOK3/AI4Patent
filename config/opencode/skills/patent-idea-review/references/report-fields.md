@@ -13,7 +13,7 @@
 | `deep_review_documents` | reviewed metadata and F1–Fn mappings |
 | `novelty` | single-document matrices, closest/destroying document, missing features, rationale |
 | `inventiveness` | bounded D1/D2 routes and distinction evidence |
-| `value_assessment` | detectability, workaround, technical/market value, alternatives, recommendation |
+| `value_assessment` | detectability, workaround, technical/market value as 1–5 scores, alternatives, recommendation |
 | `simulated_office_action` | model-assisted narrative based only on frozen facts |
 | `audit` | deterministic and advisory findings/counts |
 | `limitations` | Provider, count, evidence, and analysis limitations |

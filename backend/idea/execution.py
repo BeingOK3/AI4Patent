@@ -25,6 +25,7 @@ from .providers import FetchedDocument
 from .reporting import ReportService
 from .retrieval import RetrievalResult, RetrievalService
 from .run_store import RunStore, RunStoreError
+from .runtime_debug import RunDebugLog
 from .search_strategy import assess_breadth, build_budget
 from .value_analysis import ValueAnalysisService
 from .workflow import CompletionGateError, WorkflowHarness, WorkflowStep
@@ -51,6 +52,8 @@ class WorkflowExecutor:
         value: ValueAnalysisService,
         audit: AuditService,
         reporting: ReportService,
+        *,
+        debug_log: RunDebugLog | None = None,
     ):
         self.config = config
         self.database = database
@@ -64,11 +67,13 @@ class WorkflowExecutor:
         self.value = value
         self.audit = audit
         self.reporting = reporting
+        self.debug_log = debug_log
 
     async def execute(self, run_id: str) -> str:
         run = self.database.get_run(run_id)
         if run["status"] == "QUEUED":
             self.harness.begin_run(run_id)
+            self._debug(run_id, "workflow_started", total_steps=11)
         elif run["status"] != "RUNNING":
             return run["status"]
         try:
@@ -79,6 +84,12 @@ class WorkflowExecutor:
                 attempt = self.harness.start_step(
                     run_id, step, self._step_input_fingerprint(run_id, step)
                 )
+                self._debug(
+                    run_id,
+                    "workflow_step_started",
+                    step_name=step.value,
+                    attempt=attempt,
+                )
                 try:
                     output = await asyncio.wait_for(
                         self._execute_step(run_id, step, attempt),
@@ -87,6 +98,7 @@ class WorkflowExecutor:
                 except asyncio.CancelledError:
                     if self.database.get_run(run_id)["status"] == "RUNNING":
                         self.harness.cancel_run(run_id)
+                    self._debug(run_id, "workflow_cancelled", step_name=step.value)
                     raise
                 except Exception as exc:
                     self.harness.fail_step(
@@ -96,14 +108,30 @@ class WorkflowExecutor:
                         error_code=type(exc).__name__,
                         error_message=str(exc),
                     )
+                    self._debug(
+                        run_id,
+                        "workflow_step_failed",
+                        step_name=step.value,
+                        attempt=attempt,
+                        error_code=type(exc).__name__,
+                        error_message=str(exc)[:1000],
+                    )
                     if self.database.get_run(run_id)["status"] == "FAILED":
                         return "FAILED"
                     continue
                 self.harness.complete_step(run_id, step, attempt, output)
+                self._debug(
+                    run_id,
+                    "workflow_step_completed",
+                    step_name=step.value,
+                    attempt=attempt,
+                )
             try:
-                return self.harness.finish_run(
+                status = self.harness.finish_run(
                     run_id, limitations=self._collect_run_limitations(run_id)
                 )
+                self._debug(run_id, "workflow_finished", status=status)
+                return status
             except CompletionGateError as exc:
                 self.database.set_run_status(
                     run_id,
@@ -111,9 +139,19 @@ class WorkflowExecutor:
                     error_code="COMPLETION_GATE_FAILED",
                     error_message=str(exc),
                 )
+                self._debug(
+                    run_id,
+                    "workflow_failed",
+                    error_code="COMPLETION_GATE_FAILED",
+                    error_message=str(exc)[:1000],
+                )
                 return "FAILED"
         except asyncio.CancelledError:
             raise
+
+    def _debug(self, run_id: str, event: str, **details: Any) -> None:
+        if self.debug_log:
+            self.debug_log.append(run_id, event, **details)
 
     async def _execute_step(
         self, run_id: str, step: WorkflowStep, attempt: int

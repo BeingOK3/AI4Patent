@@ -164,7 +164,7 @@ config/ai4patent.json
 config/ai4patent.schema.json
 ```
 
-`ai4patent.json` 管理全部 AI4Patent 应用设置。网页用户每次进入页面都必须重新输入模型 API Token；Token 只随 Run 创建/重跑请求进入后端进程内存，不得写入应用配置、认证文件、数据库、历史、日志、报告或浏览器存储。CLI 仅允许从当前进程指定的环境变量读取 Token，不接受命令行明文参数。
+`ai4patent.json` 管理系统级存储、缓存、检索与 Workflow 设置。网页用户每次进入页面都必须重新输入模型 Base URL、API Key 和 Model；三者以 Run 级 `ContextVar` 隔离，API Key 只随 Run 创建/重跑请求进入后端进程内存，不得写入应用配置、认证文件、数据库、历史、日志、报告或浏览器存储。Base URL 与 Model 可作为不含凭证的 Run 来源信息持久化。CLI 必须显式提供 Base URL 和 Model，API Key 仅允许从当前进程指定的环境变量读取，不接受命令行明文参数。
 
 OpenCode 自身配置由 `config/opencode/opencode.json` 承载，但后端使用的默认模型、功能开关、工作流、存储、缓存和检索策略均以 `config/ai4patent.json` 为准。
 
@@ -853,6 +853,7 @@ GET    /api/idea/cases/{case_id}
 POST   /api/idea/cases/{case_id}/runs
 GET    /api/idea/runs/{run_id}
 GET    /api/idea/runs/{run_id}/events
+GET    /api/idea/runs/{run_id}/debug
 POST   /api/idea/runs/{run_id}/cancel
 POST   /api/idea/runs/{run_id}/rerun
 GET    /api/idea/runs/{run_id}/report
@@ -900,6 +901,8 @@ POST   /api/system/cache/cleanup
 - `provider`；
 - `duration`；
 - 状态和错误码。
+
+每个 Run 的详细调试事件追加到 `workspace/debug/idea-runs/{run_id}.jsonl`。前端通过 `/api/idea/runs/{run_id}/debug` 聚合最新步骤 attempt、Tool Call 摘要和 JSONL 事件；该目录整体由 Git 忽略。调试数据只保存输入字符数、Provider、操作、状态、结果数、耗时、usage 计数和错误摘要，不保存 API Key、Authorization、完整 Prompt、完整用户输入或完整模型输出。
 
 运行日志不默认打印完整 IDEA、完整权利要求、完整工具输出或完整模型输出。内部共享不等于应把大文本和密钥写进日志。
 

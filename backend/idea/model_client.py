@@ -18,7 +18,18 @@ from .config import ModelSettings
 
 
 ModelTransport = Callable[[dict[str, Any], dict[str, str]], Awaitable[dict[str, Any]]]
-_RUN_API_KEY: ContextVar[str | None] = ContextVar("idea_run_api_key", default=None)
+
+
+@dataclass(frozen=True)
+class RuntimeModelConfig:
+    base_url: str
+    api_key: str
+    model: str
+
+
+_RUN_MODEL_CONFIG: ContextVar[RuntimeModelConfig | None] = ContextVar(
+    "idea_run_model_config", default=None
+)
 
 
 class ModelClientError(RuntimeError):
@@ -26,16 +37,20 @@ class ModelClientError(RuntimeError):
 
 
 @contextmanager
-def runtime_api_key(api_key: str) -> Iterator[None]:
-    """Make a Run credential available only inside the current async context."""
-    value = api_key.strip()
-    if not value:
-        raise ModelClientError("runtime model credential is required")
-    token = _RUN_API_KEY.set(value)
+def runtime_model_config(config: RuntimeModelConfig) -> Iterator[None]:
+    """Make one page-supplied model configuration available to one async Run."""
+    value = RuntimeModelConfig(
+        base_url=config.base_url.strip().rstrip("/"),
+        api_key=config.api_key.strip(),
+        model=config.model.strip(),
+    )
+    if not value.base_url or not value.api_key or not value.model:
+        raise ModelClientError("runtime base URL, API credential, and model are required")
+    token = _RUN_MODEL_CONFIG.set(value)
     try:
         yield
     finally:
-        _RUN_API_KEY.reset(token)
+        _RUN_MODEL_CONFIG.reset(token)
 
 
 @dataclass(frozen=True)
@@ -72,6 +87,9 @@ class StructuredModelClient:
                 "role": "system",
                 "content": (
                     system_prompt.strip()
+                    + "\n\nAll human-readable explanations, rationales, summaries, recommendations, "
+                    "limitations, and issue messages must use Simplified Chinese. Keep schema "
+                    "enums, IDs, publication numbers, and search query text unchanged."
                     + "\n\nReturn only one JSON object that validates against the supplied JSON Schema. "
                     "Do not use markdown fences. Do not invent tool calls or evidence IDs."
                 ),
@@ -97,7 +115,7 @@ class StructuredModelClient:
                 usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
                 return AgentCallResult(
                     agent_name=agent_name,
-                    model=self.settings.default,
+                    model=self.model_name(),
                     output=output,
                     attempts=attempt,
                     duration_ms=round((time.monotonic() - started) * 1000),
@@ -132,9 +150,9 @@ class StructuredModelClient:
         )
 
     def api_key(self) -> str:
-        runtime_key = _RUN_API_KEY.get()
-        if runtime_key:
-            return runtime_key
+        runtime = _RUN_MODEL_CONFIG.get()
+        if runtime:
+            return runtime.api_key
         key = os.environ.get(self.settings.api_key_env, "").strip()
         if key:
             return key
@@ -147,9 +165,17 @@ class StructuredModelClient:
             raise ModelClientError("model credential is not configured")
         return key
 
+    def model_name(self) -> str:
+        runtime = _RUN_MODEL_CONFIG.get()
+        return runtime.model if runtime else self.settings.default
+
+    def base_url(self) -> str:
+        runtime = _RUN_MODEL_CONFIG.get()
+        return runtime.base_url if runtime else str(self.settings.base_url).rstrip("/")
+
     def _payload(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         return {
-            "model": self.settings.default,
+            "model": self.model_name(),
             "messages": messages,
             "temperature": self.settings.temperature,
             "max_tokens": self.settings.max_output_tokens,
@@ -174,7 +200,7 @@ class StructuredModelClient:
     async def _post(
         self, payload: dict[str, Any], headers: dict[str, str], *, trust_env: bool
     ) -> dict[str, Any]:
-        url = str(self.settings.base_url).rstrip("/") + "/chat/completions"
+        url = self.base_url() + "/chat/completions"
         async with httpx.AsyncClient(
             timeout=self.settings.timeout_seconds,
             trust_env=trust_env,

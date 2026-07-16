@@ -228,7 +228,7 @@ def select_deep_review(
             "code": "INSUFFICIENT_RELEVANT_DEEP_REVIEWS",
             "required": budget.deep_review_min,
             "selected": len(selected),
-            "message": "Relevant documents were insufficient; weak documents were not used as padding.",
+            "message": "相关文献数量不足；系统未使用弱相关文献凑足深读数量。",
         }
     return DeepReviewSelection(
         selected=selected,

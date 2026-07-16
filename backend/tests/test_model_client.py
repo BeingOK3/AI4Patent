@@ -7,7 +7,12 @@ import unittest
 from pathlib import Path
 
 from idea.config import load_config
-from idea.model_client import ModelClientError, StructuredModelClient, runtime_api_key
+from idea.model_client import (
+    ModelClientError,
+    RuntimeModelConfig,
+    StructuredModelClient,
+    runtime_model_config,
+)
 
 
 def valid_parser_output():
@@ -113,12 +118,22 @@ class StructuredModelClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ModelClientError, "credential"):
             StructuredModelClient(settings).api_key()
 
-    def test_runtime_key_overrides_disk_only_inside_context(self) -> None:
+    def test_runtime_config_overrides_all_model_coordinates_only_inside_context(self) -> None:
         client = StructuredModelClient(self.settings)
         self.assertEqual(client.api_key(), "test-secret")
-        with runtime_api_key("ephemeral-test-token"):
+        with runtime_model_config(
+            RuntimeModelConfig(
+                "https://runtime.example.test/v1",
+                "ephemeral-test-token",
+                "runtime-model",
+            )
+        ):
             self.assertEqual(client.api_key(), "ephemeral-test-token")
+            self.assertEqual(client.base_url(), "https://runtime.example.test/v1")
+            self.assertEqual(client.model_name(), "runtime-model")
+            self.assertEqual(client._payload([])["model"], "runtime-model")
         self.assertEqual(client.api_key(), "test-secret")
+        self.assertEqual(client.model_name(), self.settings.default)
 
 
 if __name__ == "__main__":

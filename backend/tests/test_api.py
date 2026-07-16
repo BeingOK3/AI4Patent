@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from idea.api import RunTaskManager, create_idea_router
 from idea.config import load_config
 from idea.database import Database, now_ms
+from idea.model_client import RuntimeModelConfig
 from idea.run_store import RunStore
 from idea.workflow import WorkflowHarness
 
@@ -22,8 +23,10 @@ class RecordingManager:
         self.harness = harness
         self.started = []
 
-    def start(self, run_id, *, api_key=None):
-        self.started.append((run_id, bool(api_key)))
+    def start(self, run_id, *, runtime_config=None):
+        self.started.append(
+            (run_id, runtime_config.base_url, runtime_config.model, bool(runtime_config.api_key))
+        )
         return True
 
     async def cancel(self, run_id):
@@ -84,6 +87,8 @@ class IdeaApiTests(unittest.TestCase):
     def create_run(self, case_id, **overrides):
         payload = {
             "api_key": "test-runtime-token",
+            "base_url": "https://runtime.example.test/v1",
+            "model": "runtime-model",
             "input_text": "A cache controller computes token heat and evicts cold entries.",
             "evaluation_date": "2026-07-16",
             "settings": {"search_mode": "quick"},
@@ -97,16 +102,26 @@ class IdeaApiTests(unittest.TestCase):
         self.assertEqual(created.status_code, 200)
         run = created.json()
         self.assertEqual(run["status"], "QUEUED")
-        self.assertEqual(self.manager.started, [(run["run_id"], True)])
+        self.assertEqual(
+            self.manager.started,
+            [(run["run_id"], "https://runtime.example.test/v1", "runtime-model", True)],
+        )
+        self.assertEqual(run["model"], "runtime-model")
+        self.assertEqual(run["base_url"], "https://runtime.example.test/v1")
 
         detail = self.client.get(f"/api/idea/runs/{run['run_id']}").json()
         self.assertEqual(detail["progress"]["total_steps"], 11)
         rerun = self.client.post(
             f"/api/idea/runs/{run['run_id']}/rerun",
-            json={"api_key": "test-rerun-token"},
+            json={
+                "api_key": "test-rerun-token",
+                "base_url": "https://rerun.example.test/v1",
+                "model": "rerun-model",
+            },
         ).json()
         self.assertEqual(rerun["parent_run_id"], run["run_id"])
         self.assertNotEqual(rerun["run_id"], run["run_id"])
+        self.assertEqual(rerun["model"], "rerun-model")
         history = self.client.get(f"/api/idea/cases/{case['case_id']}").json()
         self.assertEqual(len(history["runs"]), 2)
 
@@ -162,6 +177,29 @@ class IdeaApiTests(unittest.TestCase):
         response = json.dumps(created.json(), ensure_ascii=False)
         self.assertNotIn(secret, persisted)
         self.assertNotIn(secret, response)
+        self.assertEqual(self.db.get_run(run_id)["model"], "runtime-model")
+
+    def test_runtime_model_config_rejects_unsafe_or_missing_values(self) -> None:
+        case = self.create_case()
+        for overrides in (
+            {"base_url": None},
+            {"model": "   "},
+            {"base_url": "https://user:password@example.test/v1"},
+            {"base_url": "https://example.test/v1?credential=value"},
+        ):
+            response = self.create_run(case["case_id"], **overrides)
+            self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.db.get_case(case["case_id"])["runs"], [])
+
+    def test_debug_endpoint_exposes_sanitized_trace_contract(self) -> None:
+        case = self.create_case()
+        run = self.create_run(case["case_id"]).json()
+        response = self.client.get(f"/api/idea/runs/{run['run_id']}/debug")
+        self.assertEqual(response.status_code, 200)
+        trace = response.json()
+        self.assertEqual(trace["run"]["run_id"], run["run_id"])
+        self.assertEqual(trace["tool_calls"], [])
+        self.assertTrue(trace["log_storage"]["git_ignored"])
 
     def test_terminal_sse_emits_persisted_progress_and_terminal_event(self) -> None:
         case = self.create_case()
@@ -227,13 +265,14 @@ class RunTaskManagerTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     async def test_start_is_deduplicated_and_cancel_reaches_terminal_state(self) -> None:
-        self.assertTrue(self.manager.start(self.run["run_id"], api_key="runtime-only"))
-        self.assertFalse(self.manager.start(self.run["run_id"], api_key="runtime-only"))
+        runtime = RuntimeModelConfig("https://runtime.test", "runtime-only", "fixture-model")
+        self.assertTrue(self.manager.start(self.run["run_id"], runtime_config=runtime))
+        self.assertFalse(self.manager.start(self.run["run_id"], runtime_config=runtime))
         await self.executor.started.wait()
-        self.assertIn(self.run["run_id"], self.manager._api_keys)
+        self.assertIn(self.run["run_id"], self.manager._runtime_configs)
         self.assertTrue(await self.manager.cancel(self.run["run_id"]))
         self.assertEqual(self.db.get_run(self.run["run_id"])["status"], "CANCELLED")
-        self.assertNotIn(self.run["run_id"], self.manager._api_keys)
+        self.assertNotIn(self.run["run_id"], self.manager._runtime_configs)
 
     async def test_restart_fails_incomplete_run_without_persisted_key(self) -> None:
         interrupted = self.manager.resume_incomplete()

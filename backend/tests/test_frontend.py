@@ -25,6 +25,7 @@ class FrontendContractTests(unittest.TestCase):
             "/report",
             "/rerun",
             "/cancel",
+            "/debug",
         ):
             self.assertIn(fragment, self.javascript)
         for step in (
@@ -55,9 +56,16 @@ class FrontendContractTests(unittest.TestCase):
             r'id="apiToken"[^>]*type="password"[^>]*required[^>]*autocomplete="new-password"',
         )
         self.assertNotRegex(self.html, r'id="apiToken"[^>]*\bvalue=')
-        self.assertIn('window.addEventListener("pageshow", clearRuntimeApiKey)', self.javascript)
-        self.assertIn('window.addEventListener("pagehide", clearRuntimeApiKey)', self.javascript)
-        self.assertGreaterEqual(self.javascript.count("api_key: apiKey"), 2)
+        self.assertIn('window.addEventListener("pageshow", clearRuntimeApiConfig)', self.javascript)
+        self.assertIn('window.addEventListener("pagehide", clearRuntimeApiConfig)', self.javascript)
+        for control in ("modelBaseUrl", "apiToken", "modelName"):
+            self.assertIn(f'id="{control}"', self.html)
+        self.assertIn("base_url: baseUrl", self.javascript)
+        self.assertIn("api_key: apiKey", self.javascript)
+        self.assertIn("resetWorkspace", self.javascript)
+        self.assertIn("renderEmptyDebug", self.javascript)
+        self.assertIn("patentLink", self.javascript)
+        self.assertIn("`${score}/5`", self.javascript)
         self.assertNotIn("localStorage", self.javascript)
         self.assertNotIn("sessionStorage", self.javascript)
         self.assertNotIn("/api/config", self.javascript)

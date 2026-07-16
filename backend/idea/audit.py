@@ -23,6 +23,7 @@ language reasonably supports the associated mapping and whether conclusion wordi
 the supplied evidence. Do not change conclusions, search, invent an ID, or omit an inventory
 item. Return exactly all supplied evidence IDs and publication numbers in the checked lists.
 Only output issues; programmatic integrity checks remain authoritative.
+All issue messages intended for the user must be written in Simplified Chinese.
 """
 
 
@@ -105,7 +106,7 @@ class AuditService:
                 {
                     "severity": "info",
                     "code": "AUDIT_COMPLETED",
-                    "message": "Deterministic and semantic evidence audits completed without findings.",
+                    "message": "确定性校验与语义证据审计均已完成，未发现问题。",
                     "details": {
                         "evidence_count": len(inventory),
                         "publication_count": len(publications),
@@ -157,7 +158,7 @@ class AuditService:
             if len(novelty.matrices) != len(documents):
                 findings.append(self._finding(
                     "critical", "NOVELTY_MATRIX_DOCUMENT_MISMATCH",
-                    "Novelty matrix count does not match analyzed document count.",
+                    "新颖性矩阵数量与已分析文献数量不一致。",
                     {"matrix_count": len(novelty.matrices), "document_count": len(documents)},
                 ))
             novelty_by_publication = {
@@ -169,13 +170,13 @@ class AuditService:
             if novelty.conclusion == "NOVEL" and len(documents) < self.minimum_deep_reviews:
                 findings.append(self._finding(
                     "critical", "NOVELTY_REVIEW_MINIMUM_NOT_MET",
-                    "NOVEL conclusion does not meet the configured deep-review minimum.",
+                    "“具备新颖性”结论未达到配置的深度核验最低篇数。",
                     {"actual": len(documents), "minimum": self.minimum_deep_reviews},
                 ))
             elif len(documents) < self.minimum_deep_reviews:
                 findings.append(self._finding(
                     "warning", "DEEP_REVIEW_MINIMUM_NOT_MET",
-                    "Deep-review count is below the configured minimum.",
+                    "深度核验文献数量低于配置下限。",
                     {"actual": len(documents), "minimum": self.minimum_deep_reviews},
                 ))
 
@@ -186,13 +187,13 @@ class AuditService:
                 if matrix_mappings is None:
                     findings.append(self._finding(
                         "critical", "MISSING_NOVELTY_DOCUMENT_MATRIX",
-                        f"Document {document['publication_number']} is absent from novelty matrices.", {},
+                        f"文献 {document['publication_number']} 未出现在新颖性矩阵中。", {},
                     ))
                     matrix_mappings = {}
                 if not document["publication_date"]:
                     findings.append(self._finding(
                         "critical", "MISSING_PUBLICATION_DATE",
-                        f"Document {document['publication_number']} has no publication date.",
+                        f"文献 {document['publication_number']} 缺少公开日。",
                         {"document_id": document["document_id"]},
                     ))
                 else:
@@ -201,14 +202,14 @@ class AuditService:
                     except ValueError:
                         findings.append(self._finding(
                             "critical", "INVALID_PUBLICATION_DATE",
-                            f"Document {document['publication_number']} has an invalid publication date.",
+                            f"文献 {document['publication_number']} 的公开日格式无效。",
                             {"value": document["publication_date"]},
                         ))
                     else:
                         if publication_date > evaluation:
                             findings.append(self._finding(
                                 "critical", "POST_EVALUATION_DOCUMENT",
-                                f"Document {document['publication_number']} is after the evaluation date.",
+                                f"文献 {document['publication_number']} 的公开日晚于评估日。",
                                 {"publication_date": document["publication_date"]},
                             ))
                 mappings = connection.execute(
@@ -218,7 +219,7 @@ class AuditService:
                 if len(mappings) != feature_count:
                     findings.append(self._finding(
                         "critical", "INCOMPLETE_FEATURE_MATRIX",
-                        f"Document {document['publication_number']} has an incomplete feature matrix.",
+                        f"文献 {document['publication_number']} 的技术特征矩阵不完整。",
                         {"expected": feature_count, "actual": len(mappings)},
                     ))
                 for mapping in mappings:
@@ -228,14 +229,14 @@ class AuditService:
                         evidence_ids = None
                     if not isinstance(evidence_ids, list):
                         findings.append(self._finding(
-                            "critical", "INVALID_EVIDENCE_LIST", "Feature mapping evidence list is invalid.",
+                            "critical", "INVALID_EVIDENCE_LIST", "技术特征映射的证据列表无效。",
                             {"mapping_id": mapping["mapping_id"]},
                         ))
                         continue
                     if mapping["coverage_status"] in {"DISCLOSED", "PARTIAL"} and not evidence_ids:
                         findings.append(self._finding(
                             "critical", "DISCLOSURE_WITHOUT_EVIDENCE",
-                            "Disclosed or partial feature mapping has no evidence.",
+                            "已披露或部分披露的技术特征映射缺少证据。",
                             {"mapping_id": mapping["mapping_id"]},
                         ))
                     external_id = feature_external.get(mapping["feature_id"])
@@ -248,7 +249,7 @@ class AuditService:
                     ):
                         findings.append(self._finding(
                             "critical", "NOVELTY_MATRIX_MAPPING_MISMATCH",
-                            "Novelty matrix mapping does not match its durable feature mapping.",
+                            "新颖性矩阵映射与持久化技术特征映射不一致。",
                             {
                                 "publication_number": document["publication_number"],
                                 "feature_id": external_id,
@@ -263,7 +264,7 @@ class AuditService:
                         if evidence is None:
                             findings.append(self._finding(
                                 "critical", "UNKNOWN_EVIDENCE",
-                                f"Mapping cites missing or cross-document evidence {evidence_id}.",
+                                f"技术特征映射引用了缺失或跨文献证据 {evidence_id}。",
                                 {"mapping_id": mapping["mapping_id"]},
                             ))
                             continue
@@ -273,7 +274,7 @@ class AuditService:
                         if actual_hash != evidence["content_hash"]:
                             findings.append(self._finding(
                                 "critical", "EVIDENCE_HASH_MISMATCH",
-                                f"Evidence {evidence_id} failed its content hash check.", {},
+                                f"证据 {evidence_id} 未通过内容哈希校验。", {},
                             ))
                             continue
                         inventory.append(
@@ -295,7 +296,7 @@ class AuditService:
             if persisted is None or persisted["matrix_json"] != expected_json:
                 findings.append(self._finding(
                     "critical", "NOVELTY_RESULT_MISMATCH",
-                    "In-memory novelty result does not match the durable result.", {},
+                    "内存中的新颖性结果与持久化结果不一致。", {},
                 ))
             persisted_routes = {
                 row["result_json"]
@@ -309,7 +310,7 @@ class AuditService:
             if persisted_routes != expected_routes:
                 findings.append(self._finding(
                     "critical", "INVENTIVE_RESULTS_MISMATCH",
-                    "In-memory inventive routes do not match durable routes.", {},
+                    "内存中的创造性分析路线与持久化结果不一致。", {},
                 ))
             persisted_value = connection.execute(
                 "SELECT result_json FROM value_results WHERE run_id = ?", (run_id,)
@@ -318,7 +319,7 @@ class AuditService:
             if persisted_value is None or persisted_value["result_json"] != expected_value:
                 findings.append(self._finding(
                     "critical", "VALUE_RESULT_MISMATCH",
-                    "In-memory value result does not match the durable result.", {},
+                    "内存中的价值评估结果与持久化结果不一致。", {},
                 ))
         deduplicated: dict[str, dict[str, Any]] = {}
         for item in inventory:

@@ -27,7 +27,7 @@
           <p class="section-kicker">SHARED HISTORY</p>
           <h2>评估记录</h2>
         </div>
-        <button id="newCaseBtn" class="icon-button" title="新建 Case">＋</button>
+        <button id="newCaseBtn" class="icon-button" title="新建空白 Case">＋</button>
       </div>
       <div id="caseList" class="case-list" aria-live="polite"></div>
     </aside>
@@ -42,16 +42,30 @@
       </div>
 
       <form id="runForm">
-        <label for="apiToken">API Token（本页临时使用）</label>
+        <label for="modelBaseUrl">模型 API（本页临时使用）</label>
+        <div class="form-grid two runtime-config-grid">
+          <div>
+            <label for="modelBaseUrl">Base URL</label>
+            <input id="modelBaseUrl" type="url" required autocomplete="off" spellcheck="false"
+              placeholder="例如：https://api.deepseek.com">
+          </div>
+          <div>
+            <label for="modelName">Model</label>
+            <input id="modelName" required maxlength="200" autocomplete="off" spellcheck="false"
+              placeholder="例如：deepseek-v4-flash">
+          </div>
+        </div>
+        <label for="apiToken">API Key</label>
         <input id="apiToken" type="password" required autocomplete="new-password" spellcheck="false"
-          placeholder="输入本次页面使用的模型 API Token">
+          placeholder="输入本次页面使用的 API Key">
         <div class="field-meta">
-          <span>仅保留在当前页面内</span>
-          <span>刷新或重新进入页面后必须重新输入，不写入历史、日志或浏览器存储</span>
+          <span>三项配置仅用于当前页面和对应 Run</span>
+          <span>刷新、关闭或点击“＋”后必须重新输入；API Key 不写入历史、日志或浏览器存储</span>
         </div>
 
         <label for="caseTitle">Case 名称</label>
         <input id="caseTitle" maxlength="200" placeholder="例如：Token 热度缓存淘汰">
+        <div class="field-meta"><span>用于把同一技术方案的多次 Run 归为一组，不参与模型判断</span></div>
 
         <label for="ideaText">技术方案 / IDEA</label>
         <textarea id="ideaText" minlength="10" maxlength="200000" rows="10" required
@@ -62,10 +76,12 @@
           <div>
             <label for="evaluationDate">评估日</label>
             <input id="evaluationDate" type="date" required>
+            <p class="input-help">实际检索截止日；该日期之后公开的专利不进入新颖性判断。</p>
           </div>
           <div>
-            <label for="dateBasis">日期依据</label>
+            <label for="dateBasis">评估日依据</label>
             <input id="dateBasis" value="用户指定或提交日" maxlength="200">
+            <p class="input-help">说明为什么选择该日期，仅用于报告追溯，不改变计算。</p>
           </div>
         </div>
 
@@ -115,6 +131,18 @@
         </div>
         <div class="progress-track"><span id="progressBar"></span></div>
         <ol id="stepList" class="step-list"></ol>
+      </section>
+
+      <section class="debug-section">
+        <div class="progress-header">
+          <div>
+            <p class="section-kicker">LIVE DEBUG TRACE</p>
+            <h3>运行调试</h3>
+          </div>
+          <span id="debugStatus" class="status-pill neutral">等待 Run</span>
+        </div>
+        <p id="debugSummary" class="debug-summary">开始评估后，这里会显示当前 Workflow、Tool Call、耗时和错误。</p>
+        <div id="debugTimeline" class="debug-timeline" aria-live="polite"></div>
       </section>
     </section>
 

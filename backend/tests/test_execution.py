@@ -53,9 +53,9 @@ def novelty_result():
 
 def value_result():
     return ValueAnalyzerOutput.model_validate({
-        "detectability": {"rating": "MEDIUM", "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
-        "workaround_difficulty": {"rating": "MEDIUM", "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
-        "technical_market_value": {"rating": "MEDIUM", "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
+        "detectability": {"rating": 3, "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
+        "workaround_difficulty": {"rating": 3, "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
+        "technical_market_value": {"rating": 3, "rationale": "basis", "evidence_basis": ["IDEA:F1"]},
         "alternative_paths": ["path one", "path two"], "recommendation": "WATCH", "rationale": "preliminary",
     })
 

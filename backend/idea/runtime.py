@@ -16,6 +16,7 @@ from .providers import ExaMcpProvider, GooglePatentsProvider
 from .reporting import ReportService
 from .retrieval import RetrievalService
 from .run_store import RunStore
+from .runtime_debug import RunDebugLog
 from .value_analysis import ValueAnalysisService
 from .workflow import WorkflowHarness
 
@@ -28,6 +29,7 @@ class IdeaRuntime:
     run_store: RunStore
     harness: WorkflowHarness
     executor: WorkflowExecutor
+    debug_log: RunDebugLog
 
 
 def build_runtime(config: AppConfig) -> IdeaRuntime:
@@ -42,6 +44,7 @@ def build_runtime(config: AppConfig) -> IdeaRuntime:
     )
     cache.repair()
     run_store = RunStore(config.storage.runs_dir)
+    debug_log = RunDebugLog(config.storage.runs_dir.parent / "debug" / "idea-runs")
     harness = WorkflowHarness(
         database,
         run_store,
@@ -50,7 +53,7 @@ def build_runtime(config: AppConfig) -> IdeaRuntime:
     harness.recover_incomplete()
 
     model = StructuredModelClient(config.model)
-    agents = IdeaAgentService(database, model)
+    agents = IdeaAgentService(database, model, debug_log=debug_log)
     providers = []
     if config.search.providers.google_patents_local.enabled:
         providers.append(
@@ -67,6 +70,7 @@ def build_runtime(config: AppConfig) -> IdeaRuntime:
         providers,
         search_timeout_seconds=timeouts,
         fetch_concurrency=config.workflow.document_agent_concurrency,
+        debug_log=debug_log,
     )
     documents = DocumentAnalysisService(
         database,
@@ -100,5 +104,6 @@ def build_runtime(config: AppConfig) -> IdeaRuntime:
         value,
         audit,
         reporting,
+        debug_log=debug_log,
     )
-    return IdeaRuntime(config, database, cache, run_store, harness, executor)
+    return IdeaRuntime(config, database, cache, run_store, harness, executor, debug_log)

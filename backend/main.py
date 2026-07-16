@@ -42,7 +42,12 @@ IDEA_DB = IDEA_RUNTIME.database
 IDEA_CACHE = IDEA_RUNTIME.cache
 IDEA_RUN_STORE = IDEA_RUNTIME.run_store
 IDEA_WORKFLOW = IDEA_RUNTIME.harness
-IDEA_TASKS = RunTaskManager(IDEA_DB, IDEA_WORKFLOW, IDEA_RUNTIME.executor)
+IDEA_TASKS = RunTaskManager(
+    IDEA_DB,
+    IDEA_WORKFLOW,
+    IDEA_RUNTIME.executor,
+    debug_log=IDEA_RUNTIME.debug_log,
+)
 HEALTH_SERVICE = HealthService(
     APP_CONFIG,
     IDEA_DB,
@@ -50,7 +55,14 @@ HEALTH_SERVICE = HealthService(
     workflow_recovery_ready=lambda: IDEA_WORKFLOW.recovery_ready,
 )
 app.include_router(
-    create_idea_router(APP_CONFIG, IDEA_DB, IDEA_RUN_STORE, IDEA_WORKFLOW, IDEA_TASKS)
+    create_idea_router(
+        APP_CONFIG,
+        IDEA_DB,
+        IDEA_RUN_STORE,
+        IDEA_WORKFLOW,
+        IDEA_TASKS,
+        debug_log=IDEA_RUNTIME.debug_log,
+    )
 )
 
 

@@ -283,7 +283,7 @@ class ReportService:
                 provider_limitations.append(
                     {
                         "code": "PROVIDER_CALL_FAILURE",
-                        "message": f"{call['provider']} {call['operation']} returned {call['status']}",
+                        "message": f"检索服务 {call['provider']} 的 {call['operation']} 调用返回 {call['status']}。",
                         "details": {"error_code": call["error_code"]},
                     }
                 )

@@ -24,6 +24,7 @@ from .providers import (
     SearchProvider,
     SearchQuery,
 )
+from .runtime_debug import RunDebugLog
 from .search_strategy import (
     DeepReviewSelection,
     RoundStats,
@@ -65,12 +66,14 @@ class RetrievalService:
         runner: ProviderRunner | None = None,
         search_timeout_seconds: dict[str, float] | None = None,
         fetch_concurrency: int = 3,
+        debug_log: RunDebugLog | None = None,
     ):
         self.database = database
         self.providers = providers
         self.runner = runner or ProviderRunner()
         self.search_timeout_seconds = search_timeout_seconds or {}
         self.fetch_concurrency = fetch_concurrency
+        self.debug_log = debug_log
 
     async def retrieve(
         self,
@@ -118,6 +121,17 @@ class RetrievalService:
                 )
                 for provider in self.providers:
                     call_specs.append((provider, query))
+            if self.debug_log:
+                for provider, query in call_specs:
+                    self.debug_log.append(
+                        run_id,
+                        "tool_call_started",
+                        step_name="RETRIEVE_CANDIDATES",
+                        provider=provider.name,
+                        operation="search",
+                        query_id=query.query_id,
+                        round_number=query.round_number,
+                    )
             results = await asyncio.gather(
                 *[
                     self.runner.search(
@@ -311,6 +325,16 @@ class RetrievalService:
                 url=selected_url,
                 language=url_language if url_language in {"zh", "en"} else language,
             )
+            if self.debug_log:
+                self.debug_log.append(
+                    run_id,
+                    "tool_call_started",
+                    step_name="NORMALIZE_AND_FETCH",
+                    provider=provider.name,
+                    operation="fetch",
+                    publication_number=publication,
+                    request_id=request.request_id,
+                )
             result = await self.runner.fetch(
                 provider,
                 request,
@@ -360,6 +384,23 @@ class RetrievalService:
                     result.error_message,
                     now_ms(),
                 ),
+            )
+        if self.debug_log:
+            self.debug_log.append(
+                run_id,
+                "tool_call_completed",
+                step_name=step_name,
+                provider=result.provider,
+                operation=result.operation,
+                status=result.status.value,
+                result_count=(
+                    len(result.hits)
+                    if result.operation == "search"
+                    else int(result.document is not None)
+                ),
+                duration_ms=result.duration_ms,
+                error_code=result.error_code,
+                error_message=result.error_message,
             )
 
     def _record_search_hits(self, run_id: str, query_id: str, hits: list) -> None:

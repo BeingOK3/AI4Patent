@@ -9,6 +9,7 @@ from typing import Any
 from .agent_schemas import IdeaParserOutput, QueryPlannerOutput
 from .database import Database, canonical_json, now_ms
 from .model_client import AgentCallResult, StructuredModelClient
+from .runtime_debug import RunDebugLog
 
 
 IDEA_PARSER_PROMPT = """
@@ -40,9 +41,16 @@ class AgentExecutionError(RuntimeError):
 
 
 class IdeaAgentService:
-    def __init__(self, database: Database, model: StructuredModelClient):
+    def __init__(
+        self,
+        database: Database,
+        model: StructuredModelClient,
+        *,
+        debug_log: RunDebugLog | None = None,
+    ):
         self.database = database
         self.model = model
+        self.debug_log = debug_log
 
     async def parse_idea(self, run_id: str, idea_text: str) -> IdeaParserOutput:
         result = await self.call_agent(
@@ -153,6 +161,16 @@ class IdeaAgentService:
     ) -> AgentCallResult:
         call_id = str(uuid.uuid4())
         timestamp = now_ms()
+        if self.debug_log:
+            self.debug_log.append(
+                run_id,
+                "tool_call_started",
+                call_id=call_id,
+                step_name=agent_name,
+                provider=self.model.settings.provider,
+                operation="structured_completion",
+                input_characters=input_size,
+            )
         try:
             result = await self.model.complete(
                 agent_name,
@@ -185,6 +203,16 @@ class IdeaAgentService:
                         timestamp,
                     ),
                 )
+            if self.debug_log:
+                self.debug_log.append(
+                    run_id,
+                    "tool_call_failed",
+                    call_id=call_id,
+                    step_name=agent_name,
+                    operation="structured_completion",
+                    error_code=type(exc).__name__,
+                    error_message=str(exc)[:1000],
+                )
             raise
         with self.database.connect() as connection:
             connection.execute(
@@ -216,6 +244,19 @@ class IdeaAgentService:
                     None,
                     timestamp,
                 ),
+            )
+        if self.debug_log:
+            self.debug_log.append(
+                run_id,
+                "tool_call_completed",
+                call_id=call_id,
+                step_name=agent_name,
+                provider=self.model.settings.provider,
+                operation="structured_completion",
+                model=result.model,
+                attempts=result.attempts,
+                duration_ms=result.duration_ms,
+                usage=result.usage,
             )
         return result
 

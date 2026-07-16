@@ -26,6 +26,8 @@ Use `../scripts/idea_workflow.py`; do not reproduce HTTP calls ad hoc unless deb
 
 `start` is never proof that search happened. `wait` is never proof that a report exists unless the status is successful. `report` is the only final-output command.
 
+`start` and `run` require `--model-base-url` and `--model`; the API Key comes only from the environment variable selected by `--api-key-env`. The local debug endpoint `/api/idea/runs/{run_id}/debug` exposes sanitized Workflow and Tool Call metadata, never credentials or full prompts.
+
 ## Recovery
 
 A CLI wait timeout leaves the Run active as long as the backend process remains alive. Call `status` later with the same Run ID; do not create a duplicate Run merely because polling timed out.

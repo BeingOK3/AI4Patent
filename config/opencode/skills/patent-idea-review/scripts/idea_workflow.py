@@ -66,6 +66,12 @@ def start(args):
         raise WorkflowClientError("deep-review maximum must be >= minimum")
     if args.candidate_max < args.deep_max:
         raise WorkflowClientError("candidate maximum must be >= deep-review maximum")
+    model_base_url = args.model_base_url.strip().rstrip("/")
+    model = args.model.strip()
+    if not model_base_url.startswith(("https://", "http://")):
+        raise WorkflowClientError("model Base URL must use http:// or https://")
+    if not model:
+        raise WorkflowClientError("model name is required")
     api_key = os.environ.get(args.api_key_env, "").strip()
     if not api_key:
         raise WorkflowClientError(
@@ -87,6 +93,8 @@ def start(args):
         method="POST",
         body={
             "api_key": api_key,
+            "base_url": model_base_url,
+            "model": model,
             "input_text": text,
             "evaluation_date": args.evaluation_date,
             "date_basis": args.date_basis,
@@ -134,6 +142,8 @@ def add_connection(parser):
 
 
 def add_start_arguments(parser):
+    parser.add_argument("--model-base-url", required=True, help="OpenAI-compatible model API URL")
+    parser.add_argument("--model", required=True, help="model name supplied by the user")
     parser.add_argument(
         "--api-key-env",
         default="DEEPSEEK_API_KEY",

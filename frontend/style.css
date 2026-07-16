@@ -168,6 +168,19 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .doc-card header, .route-card header { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .doc-card p, .route-card p, .finding p { margin: 4px 0; font-size: 10px; line-height: 1.55; }
 .small { color: var(--muted); font-size: 9px; }
+.patent-link { color: var(--accent); font-weight: 700; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.patent-link:hover, .patent-link:focus-visible { color: #075f50; border-bottom-color: currentColor; }
+.input-help { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.runtime-config-grid { margin-bottom: 8px; }
+.debug-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.debug-summary { margin: 8px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.debug-timeline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 420px; overflow: auto; }
+.debug-block { min-width: 0; }
+.debug-block h4 { margin: 0 0 7px; font-size: 10px; }
+.debug-entry { position: relative; margin-bottom: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfb; }
+.debug-entry strong { display: block; padding-right: 92px; font-size: 9px; }
+.debug-entry time { position: absolute; top: 8px; right: 8px; color: var(--muted); font-size: 8px; }
+.debug-entry pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #42504a; font: 8px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
 .limitation-list { margin: 0; padding-left: 18px; }
 .limitation-list li { margin-bottom: 6px; color: #4e5954; font-size: 10px; line-height: 1.5; }
 
@@ -185,5 +198,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   .panel { min-height: auto; margin-bottom: 12px; padding: 16px; border-radius: 12px; }
   .form-grid.two, .form-grid.three, .fact-grid { grid-template-columns: 1fr; }
   .step-list { grid-template-columns: 1fr; }
+  .debug-timeline { grid-template-columns: 1fr; }
   .result-actions { justify-content: flex-start; }
 }

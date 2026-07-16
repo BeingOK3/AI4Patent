@@ -58,9 +58,9 @@ def novelty():
 
 def value():
     return ValueAnalyzerOutput.model_validate({
-        "detectability": {"rating": "MEDIUM", "rationale": "observable", "evidence_basis": ["IDEA:F1"]},
-        "workaround_difficulty": {"rating": "MEDIUM", "rationale": "alternatives", "evidence_basis": ["IDEA:F1"]},
-        "technical_market_value": {"rating": "MEDIUM", "rationale": "preliminary", "evidence_basis": ["NOVELTY:CONCLUSION"]},
+        "detectability": {"rating": 3, "rationale": "可观察", "evidence_basis": ["IDEA:F1"]},
+        "workaround_difficulty": {"rating": 3, "rationale": "存在替代方案", "evidence_basis": ["IDEA:F1"]},
+        "technical_market_value": {"rating": 3, "rationale": "初步判断", "evidence_basis": ["NOVELTY:CONCLUSION"]},
         "alternative_paths": ["metric change", "two-stage control"], "recommendation": "FILE",
         "rationale": "retain measurable feature", "limitations": ["no market dataset"],
     })

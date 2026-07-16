@@ -26,9 +26,9 @@ class ValueModel:
         self.payload = kwargs["input_payload"]
         basis = "PATENT:invented" if self.unknown_basis else "IDEA:F1"
         output = ValueAnalyzerOutput.model_validate({
-            "detectability": {"rating": "MEDIUM", "rationale": "observable behavior", "evidence_basis": [] if self.empty_basis else [basis]},
-            "workaround_difficulty": {"rating": "MEDIUM", "rationale": "alternatives exist", "evidence_basis": ["IDEA:F2"]},
-            "technical_market_value": {"rating": "MEDIUM", "rationale": "preliminary only", "evidence_basis": ["NOVELTY:CONCLUSION"]},
+            "detectability": {"rating": 4, "rationale": "可通过运行行为观察", "evidence_basis": [] if self.empty_basis else [basis]},
+            "workaround_difficulty": {"rating": 3, "rationale": "存在替代方案", "evidence_basis": ["IDEA:F2"]},
+            "technical_market_value": {"rating": 2, "rationale": "仅作初步判断", "evidence_basis": ["NOVELTY:CONCLUSION"]},
             "alternative_paths": ["[待定]" if self.placeholder else "change the heat metric", "separate admission and eviction"],
             "recommendation": "ADJUST_THEN_FILE",
             "rationale": "preserve measurable implementation details",
@@ -94,6 +94,25 @@ class ValueAnalysisServiceTests(unittest.TestCase):
                 "SELECT result_json FROM value_results WHERE run_id = ?", (self.run_id,)
             ).fetchone()
         self.assertEqual(json.loads(row["result_json"])["recommendation"], "ADJUST_THEN_FILE")
+        self.assertEqual(output.detectability.rating, 4)
+
+    def test_value_score_must_be_between_one_and_five(self) -> None:
+        value = {
+            "rating": 0,
+            "rationale": "无效分数",
+            "evidence_basis": ["IDEA:F1"],
+        }
+        with self.assertRaises(ValueError):
+            ValueAnalyzerOutput.model_validate(
+                {
+                    "detectability": value,
+                    "workaround_difficulty": {**value, "rating": 3},
+                    "technical_market_value": {**value, "rating": 6},
+                    "alternative_paths": ["路径一", "路径二"],
+                    "recommendation": "WATCH",
+                    "rationale": "测试",
+                }
+            )
 
     def test_unknown_basis_id_is_rejected(self) -> None:
         model = ValueModel(unknown_basis=True)

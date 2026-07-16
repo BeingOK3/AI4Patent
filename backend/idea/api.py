@@ -9,11 +9,12 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from .config import AppConfig, SearchMode
 from .database import Database
 from .execution import WorkflowExecutor
+from .model_client import runtime_api_key
 from .run_store import RunStore
 from .workflow import TERMINAL_RUN_STATUSES, WorkflowHarness
 
@@ -50,6 +51,7 @@ class RunSettings(ApiModel):
 
 
 class CreateRunRequest(ApiModel):
+    api_key: SecretStr
     input_text: str = Field(min_length=10, max_length=200_000)
     evaluation_date: date = Field(default_factory=date.today)
     date_basis: str = Field(default="用户指定或提交日", min_length=1, max_length=200)
@@ -57,9 +59,27 @@ class CreateRunRequest(ApiModel):
     settings: RunSettings = Field(default_factory=RunSettings)
     attachment_names: list[str] = Field(default_factory=list, max_length=20)
 
+    @field_validator("api_key")
+    @classmethod
+    def nonempty_api_key(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("api_key must not be blank")
+        return value
+
 
 class DeleteRequest(ApiModel):
     operator_label: str | None = Field(default=None, max_length=100)
+
+
+class RuntimeCredentialRequest(ApiModel):
+    api_key: SecretStr
+
+    @field_validator("api_key")
+    @classmethod
+    def nonempty_api_key(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("api_key must not be blank")
+        return value
 
 
 class RunTaskManager:
@@ -73,21 +93,36 @@ class RunTaskManager:
         self.harness = harness
         self.executor = executor
         self.tasks: dict[str, asyncio.Task] = {}
+        self._api_keys: dict[str, str] = {}
 
-    def start(self, run_id: str) -> bool:
+    def start(self, run_id: str, *, api_key: str | None = None) -> bool:
         run = self.database.get_run(run_id)
         if run["status"] in TERMINAL_RUN_STATUSES:
             return False
         existing = self.tasks.get(run_id)
         if existing and not existing.done():
             return False
+        value = (api_key or self._api_keys.get(run_id) or "").strip()
+        if not value:
+            return False
+        self._api_keys[run_id] = value
         task = asyncio.create_task(self._run(run_id), name=f"idea-run:{run_id}")
         self.tasks[run_id] = task
         return True
 
     async def _run(self, run_id: str) -> None:
         try:
-            await self.executor.execute(run_id)
+            api_key = self._api_keys.get(run_id)
+            if not api_key:
+                self.database.set_run_status(
+                    run_id,
+                    "FAILED",
+                    error_code="RUNTIME_API_KEY_REQUIRED",
+                    error_message="本次 Run 的临时 API Token 已不可用，请重新输入后重跑。",
+                )
+                return
+            with runtime_api_key(api_key):
+                await self.executor.execute(run_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -103,6 +138,7 @@ class RunTaskManager:
             current = self.tasks.get(run_id)
             if current is asyncio.current_task():
                 self.tasks.pop(run_id, None)
+            self._api_keys.pop(run_id, None)
 
     async def cancel(self, run_id: str) -> bool:
         run = self.database.get_run(run_id)
@@ -116,6 +152,7 @@ class RunTaskManager:
         run = self.database.get_run(run_id)
         if run["status"] not in TERMINAL_RUN_STATUSES:
             self.harness.cancel_run(run_id)
+        self._api_keys.pop(run_id, None)
         return True
 
     def resume_incomplete(self) -> list[str]:
@@ -123,11 +160,16 @@ class RunTaskManager:
             rows = connection.execute(
                 "SELECT run_id FROM idea_runs WHERE status IN ('QUEUED','RUNNING') ORDER BY created_at"
             ).fetchall()
-        resumed = []
+        failed = []
         for row in rows:
-            if self.start(row["run_id"]):
-                resumed.append(row["run_id"])
-        return resumed
+            self.database.set_run_status(
+                row["run_id"],
+                "FAILED",
+                error_code="RUNTIME_API_KEY_REQUIRED_AFTER_RESTART",
+                error_message="服务已重启，临时 API Token 未被保存；请在页面重新输入后重跑。",
+            )
+            failed.append(row["run_id"])
+        return failed
 
 
 def create_idea_router(
@@ -174,7 +216,7 @@ def create_idea_router(
             )
         except KeyError:
             raise HTTPException(404, "case not found")
-        manager.start(run["run_id"])
+        manager.start(run["run_id"], api_key=request.api_key.get_secret_value())
         return _run_view(database, harness, run["run_id"])
 
     @router.get("/runs/{run_id}")
@@ -223,7 +265,7 @@ def create_idea_router(
         return {"run_id": run_id, "cancelled": cancelled, "status": database.get_run(run_id)["status"]}
 
     @router.post("/runs/{run_id}/rerun")
-    async def rerun(run_id: str):
+    async def rerun(run_id: str, request: RuntimeCredentialRequest):
         try:
             source = database.get_run(run_id)
         except KeyError:
@@ -251,7 +293,7 @@ def create_idea_router(
             settings=source["settings_json"],
             parent_run_id=run_id,
         )
-        manager.start(new_run["run_id"])
+        manager.start(new_run["run_id"], api_key=request.api_key.get_secret_value())
         return _run_view(database, harness, new_run["run_id"])
 
     @router.get("/runs/{run_id}/report")

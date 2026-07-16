@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import tempfile
@@ -121,27 +120,14 @@ class HealthService:
         }
 
     def _check_model_auth(self) -> dict:
-        source = "missing"
-        configured = False
-        if os.environ.get(self.config.model.api_key_env):
-            source = "environment"
-            configured = True
-        elif self.config.model.auth_file.is_file():
-            try:
-                auth = json.loads(self.config.model.auth_file.read_text(encoding="utf-8-sig"))
-                configured = bool(
-                    auth.get(self.config.model.auth_provider, {}).get("apiKey")
-                )
-                source = "auth_file" if configured else "missing"
-            except (OSError, json.JSONDecodeError):
-                source = "invalid_auth_file"
         return {
-            "ok": configured,
-            "status": "ready" if configured else "error",
+            "ok": True,
+            "status": "runtime_required",
             "provider": self.config.model.provider,
             "model": self.config.model.default,
             "base_url": str(self.config.model.base_url),
-            "credential_source": source,
+            "credential_source": "per_run",
+            "detail": "enter an API Token in the page for each browser session",
         }
 
     def _check_exa_config(self) -> dict:

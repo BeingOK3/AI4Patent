@@ -66,9 +66,8 @@ class HealthServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertTrue(result["components"]["database"]["ok"])
         self.assertTrue(result["components"]["cache"]["ok"])
-        self.assertEqual(
-            result["components"]["model"]["credential_source"], "auth_file"
-        )
+        self.assertEqual(result["components"]["model"]["credential_source"], "per_run")
+        self.assertEqual(result["components"]["model"]["status"], "runtime_required")
 
     def test_one_online_provider_can_degrade_without_core_failure(self) -> None:
         result = asyncio.run(self.service(google_ok=False).check())
@@ -95,12 +94,13 @@ class HealthServiceTests(unittest.TestCase):
         self.assertEqual(result["components"]["opencode"]["status"], "optional")
         self.assertEqual(result["components"]["exa_mcp"]["status"], "configured")
 
-    def test_missing_model_credential_is_core_error(self) -> None:
+    def test_missing_server_credential_waits_for_per_run_token(self) -> None:
         self.config.model.auth_file.unlink()
         result = asyncio.run(self.service().check())
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["status"], "error")
-        self.assertFalse(result["components"]["model"]["ok"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["components"]["model"]["ok"])
+        self.assertEqual(result["components"]["model"]["status"], "runtime_required")
 
     def test_pending_workflow_is_reported_without_hiding_other_health(self) -> None:
         result = asyncio.run(self.service(recovery=False).check())

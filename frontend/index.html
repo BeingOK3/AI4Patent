@@ -42,6 +42,14 @@
       </div>
 
       <form id="runForm">
+        <label for="apiToken">API Token（本页临时使用）</label>
+        <input id="apiToken" type="password" required autocomplete="new-password" spellcheck="false"
+          placeholder="输入本次页面使用的模型 API Token">
+        <div class="field-meta">
+          <span>仅保留在当前页面内</span>
+          <span>刷新或重新进入页面后必须重新输入，不写入历史、日志或浏览器存储</span>
+        </div>
+
         <label for="caseTitle">Case 名称</label>
         <input id="caseTitle" maxlength="200" placeholder="例如：Token 热度缓存淘汰">
 

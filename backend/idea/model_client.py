@@ -4,7 +4,9 @@ import json
 import os
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,10 +18,24 @@ from .config import ModelSettings
 
 
 ModelTransport = Callable[[dict[str, Any], dict[str, str]], Awaitable[dict[str, Any]]]
+_RUN_API_KEY: ContextVar[str | None] = ContextVar("idea_run_api_key", default=None)
 
 
 class ModelClientError(RuntimeError):
     pass
+
+
+@contextmanager
+def runtime_api_key(api_key: str) -> Iterator[None]:
+    """Make a Run credential available only inside the current async context."""
+    value = api_key.strip()
+    if not value:
+        raise ModelClientError("runtime model credential is required")
+    token = _RUN_API_KEY.set(value)
+    try:
+        yield
+    finally:
+        _RUN_API_KEY.reset(token)
 
 
 @dataclass(frozen=True)
@@ -116,6 +132,9 @@ class StructuredModelClient:
         )
 
     def api_key(self) -> str:
+        runtime_key = _RUN_API_KEY.get()
+        if runtime_key:
+            return runtime_key
         key = os.environ.get(self.settings.api_key_env, "").strip()
         if key:
             return key

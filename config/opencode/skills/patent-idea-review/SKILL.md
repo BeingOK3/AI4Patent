@@ -38,6 +38,8 @@ Read [input-and-budget.md](references/input-and-budget.md) only when the user as
 
 Locate `scripts/idea_workflow.py` relative to this Skill. Use the configured app URL, normally `http://127.0.0.1:8001`.
 
+Before `start` or `run`, require the caller to provide the model API Token through `DEEPSEEK_API_KEY` (or a specifically named environment variable selected with `--api-key-env`). Never accept a literal key on the command line, print it, copy it into a report, or write it to a file. The CLI forwards it only to the Run creation request, and the backend holds it only in process memory for that Run.
+
 1. Run `health`. Stop if the core service is unavailable.
 2. Put long/multiline IDEA text in a temporary UTF-8 file. Do not store it in a log.
 3. Run `start` with `--idea-file`, Case title, evaluation date, mode, and limits.
@@ -51,6 +53,7 @@ Example commands:
 
 ```bash
 python scripts/idea_workflow.py health
+export DEEPSEEK_API_KEY='your-key'
 python scripts/idea_workflow.py start --case-title "Token heat cache" --idea-file /tmp/idea.txt --mode standard --candidate-max 80 --deep-min 10 --deep-max 20
 python scripts/idea_workflow.py wait RUN_ID --timeout 3600
 python scripts/idea_workflow.py report RUN_ID

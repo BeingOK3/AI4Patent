@@ -22,23 +22,7 @@ cd AI4Patent
 ./install.sh
 ```
 
-配置模型密钥，推荐使用环境变量：
-
-```bash
-export DEEPSEEK_API_KEY='your-key'
-```
-
-也可以创建已被 Git 忽略的 `data/opencode/auth.json`：
-
-```json
-{
-  "agent-plan": {
-    "apiKey": "your-key"
-  }
-}
-```
-
-模型地址、模型名、存储、缓存、Provider 和检索预算统一配置在 `config/ai4patent.json`。不要把密钥写入该配置文件。
+模型地址、模型名、存储、缓存、Provider 和检索预算统一配置在 `config/ai4patent.json`。API Token 不写入配置文件、数据库、历史、日志或浏览器存储。
 
 启动服务：
 
@@ -46,6 +30,8 @@ export DEEPSEEK_API_KEY='your-key'
 ./start.sh
 # 浏览器访问 http://localhost:8001
 ```
+
+打开页面后，在“API Token（本页临时使用）”中输入自己的 Token。Token 只在当前页面和对应 Run 的进程内存中使用；刷新、关闭或重新进入页面后输入框会清空，必须重新输入。
 
 开发模式与停止：
 
@@ -59,7 +45,7 @@ export DEEPSEEK_API_KEY='your-key'
 网页为三栏 IDEA 工作区：
 
 1. 左侧查看共享 Case/Run 历史和终态。
-2. 中间输入技术方案，选择评估日、quick/standard/deep、候选上限和深读上下限。
+2. 中间输入本页临时 API Token 和技术方案，选择评估日、quick/standard/deep、候选上限和深读上下限。
 3. 运行中查看 11 步持久进度；刷新或断线后可恢复。
 4. 右侧查看新颖性、创造性、价值、审计、Provider 状态和限制，并可导出 Markdown。
 
@@ -79,7 +65,10 @@ OpenCode 中的当前入口为 `config/opencode/skills/patent-idea-review/`。�
 
 服务启动后可直接运行确定性 CLI：
 
+CLI 不接受明文 `--api-key` 参数；启动 Run 时只从当前进程的环境变量读取 Token：
+
 ```bash
+export DEEPSEEK_API_KEY='your-key'
 config/opencode/skills/patent-idea-review/scripts/idea_workflow.py health
 
 config/opencode/skills/patent-idea-review/scripts/idea_workflow.py run \
@@ -92,6 +81,8 @@ config/opencode/skills/patent-idea-review/scripts/idea_workflow.py run \
 ```
 
 CLI 只有在 Run 到达成功终态后才返回报告；失败、取消、健康门禁失败或输入非法均返回非零退出码。
+
+服务重启不会恢复任何 Token。重启时尚未结束的 Run 会进入 `FAILED / RUNTIME_API_KEY_REQUIRED_AFTER_RESTART`；在网页重新输入 Token 后使用“重新运行”创建新 Run，历史记录仍保留。
 
 ## 运行状态与故障语义
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import date
@@ -65,6 +66,11 @@ def start(args):
         raise WorkflowClientError("deep-review maximum must be >= minimum")
     if args.candidate_max < args.deep_max:
         raise WorkflowClientError("candidate maximum must be >= deep-review maximum")
+    api_key = os.environ.get(args.api_key_env, "").strip()
+    if not api_key:
+        raise WorkflowClientError(
+            f"runtime API Token is required in environment variable {args.api_key_env}"
+        )
     if args.case_id:
         case_id = args.case_id
     else:
@@ -80,6 +86,7 @@ def start(args):
         f"/api/idea/cases/{case_id}/runs",
         method="POST",
         body={
+            "api_key": api_key,
             "input_text": text,
             "evaluation_date": args.evaluation_date,
             "date_basis": args.date_basis,
@@ -127,6 +134,11 @@ def add_connection(parser):
 
 
 def add_start_arguments(parser):
+    parser.add_argument(
+        "--api-key-env",
+        default="DEEPSEEK_API_KEY",
+        help="environment variable containing the runtime API Token",
+    )
     parser.add_argument("--case-id", help="reuse an existing Case")
     parser.add_argument("--case-title", default="IDEA review", help="new Case title")
     source = parser.add_mutually_exclusive_group(required=True)

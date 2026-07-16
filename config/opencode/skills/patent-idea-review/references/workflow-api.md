@@ -28,7 +28,9 @@ Use `../scripts/idea_workflow.py`; do not reproduce HTTP calls ad hoc unless deb
 
 ## Recovery
 
-The backend resumes `QUEUED/RUNNING` Runs after restart. A CLI wait timeout leaves the Run active. Call `status` later with the same Run ID; do not create a duplicate Run merely because polling timed out.
+A CLI wait timeout leaves the Run active as long as the backend process remains alive. Call `status` later with the same Run ID; do not create a duplicate Run merely because polling timed out.
+
+API Tokens are intentionally not persisted. If the backend restarts, previously `QUEUED/RUNNING` Runs become `FAILED` with `RUNTIME_API_KEY_REQUIRED_AFTER_RESTART`. Supply the Token again and explicitly rerun; never recover from a credential file or silently reuse another user's Token.
 
 ## Error handling
 

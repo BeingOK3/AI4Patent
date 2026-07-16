@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,8 +22,8 @@ class RecordingManager:
         self.harness = harness
         self.started = []
 
-    def start(self, run_id):
-        self.started.append(run_id)
+    def start(self, run_id, *, api_key=None):
+        self.started.append((run_id, bool(api_key)))
         return True
 
     async def cancel(self, run_id):
@@ -82,6 +83,7 @@ class IdeaApiTests(unittest.TestCase):
 
     def create_run(self, case_id, **overrides):
         payload = {
+            "api_key": "test-runtime-token",
             "input_text": "A cache controller computes token heat and evicts cold entries.",
             "evaluation_date": "2026-07-16",
             "settings": {"search_mode": "quick"},
@@ -95,11 +97,14 @@ class IdeaApiTests(unittest.TestCase):
         self.assertEqual(created.status_code, 200)
         run = created.json()
         self.assertEqual(run["status"], "QUEUED")
-        self.assertEqual(self.manager.started, [run["run_id"]])
+        self.assertEqual(self.manager.started, [(run["run_id"], True)])
 
         detail = self.client.get(f"/api/idea/runs/{run['run_id']}").json()
         self.assertEqual(detail["progress"]["total_steps"], 11)
-        rerun = self.client.post(f"/api/idea/runs/{run['run_id']}/rerun").json()
+        rerun = self.client.post(
+            f"/api/idea/runs/{run['run_id']}/rerun",
+            json={"api_key": "test-rerun-token"},
+        ).json()
         self.assertEqual(rerun["parent_run_id"], run["run_id"])
         self.assertNotEqual(rerun["run_id"], run["run_id"])
         history = self.client.get(f"/api/idea/cases/{case['case_id']}").json()
@@ -140,6 +145,23 @@ class IdeaApiTests(unittest.TestCase):
             self.client.get(f"/api/idea/runs/{run['run_id']}/report").status_code,
             404,
         )
+
+    def test_runtime_api_key_is_required_and_never_persisted(self) -> None:
+        case = self.create_case()
+        missing = self.create_run(case["case_id"], api_key=None)
+        blank = self.create_run(case["case_id"], api_key="   ")
+        self.assertEqual(missing.status_code, 422)
+        self.assertEqual(blank.status_code, 422)
+        self.assertEqual(self.db.get_case(case["case_id"])["runs"], [])
+
+        secret = "fixture-ephemeral-token-123"
+        created = self.create_run(case["case_id"], api_key=secret)
+        self.assertEqual(created.status_code, 200)
+        run_id = created.json()["run_id"]
+        persisted = json.dumps(self.db.get_run(run_id), ensure_ascii=False, default=str)
+        response = json.dumps(created.json(), ensure_ascii=False)
+        self.assertNotIn(secret, persisted)
+        self.assertNotIn(secret, response)
 
     def test_terminal_sse_emits_persisted_progress_and_terminal_event(self) -> None:
         case = self.create_case()
@@ -205,16 +227,21 @@ class RunTaskManagerTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     async def test_start_is_deduplicated_and_cancel_reaches_terminal_state(self) -> None:
-        self.assertTrue(self.manager.start(self.run["run_id"]))
-        self.assertFalse(self.manager.start(self.run["run_id"]))
+        self.assertTrue(self.manager.start(self.run["run_id"], api_key="runtime-only"))
+        self.assertFalse(self.manager.start(self.run["run_id"], api_key="runtime-only"))
         await self.executor.started.wait()
+        self.assertIn(self.run["run_id"], self.manager._api_keys)
         self.assertTrue(await self.manager.cancel(self.run["run_id"]))
         self.assertEqual(self.db.get_run(self.run["run_id"])["status"], "CANCELLED")
+        self.assertNotIn(self.run["run_id"], self.manager._api_keys)
 
-    async def test_resume_incomplete_includes_queued_runs(self) -> None:
-        resumed = self.manager.resume_incomplete()
-        self.assertEqual(resumed, [self.run["run_id"]])
-        await self.executor.started.wait()
+    async def test_restart_fails_incomplete_run_without_persisted_key(self) -> None:
+        interrupted = self.manager.resume_incomplete()
+        self.assertEqual(interrupted, [self.run["run_id"]])
+        run = self.db.get_run(self.run["run_id"])
+        self.assertEqual(run["status"], "FAILED")
+        self.assertEqual(run["error_code"], "RUNTIME_API_KEY_REQUIRED_AFTER_RESTART")
+        self.assertFalse(self.executor.started.is_set())
 
 
 if __name__ == "__main__":

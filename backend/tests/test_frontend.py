@@ -49,6 +49,19 @@ class FrontendContractTests(unittest.TestCase):
             self.assertIn(f'id="{control}"', self.html)
         self.assertIn('min="10"', self.html)
 
+    def test_api_token_is_page_only_and_sent_for_create_and_rerun(self) -> None:
+        self.assertRegex(
+            self.html,
+            r'id="apiToken"[^>]*type="password"[^>]*required[^>]*autocomplete="new-password"',
+        )
+        self.assertNotRegex(self.html, r'id="apiToken"[^>]*\bvalue=')
+        self.assertIn('window.addEventListener("pageshow", clearRuntimeApiKey)', self.javascript)
+        self.assertIn('window.addEventListener("pagehide", clearRuntimeApiKey)', self.javascript)
+        self.assertGreaterEqual(self.javascript.count("api_key: apiKey"), 2)
+        self.assertNotIn("localStorage", self.javascript)
+        self.assertNotIn("sessionStorage", self.javascript)
+        self.assertNotIn("/api/config", self.javascript)
+
 
 if __name__ == "__main__":
     unittest.main()

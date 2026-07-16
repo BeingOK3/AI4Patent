@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from idea.config import load_config
-from idea.model_client import ModelClientError, StructuredModelClient
+from idea.model_client import ModelClientError, StructuredModelClient, runtime_api_key
 
 
 def valid_parser_output():
@@ -112,6 +112,13 @@ class StructuredModelClientTests(unittest.TestCase):
         settings = self.settings.model_copy(update={"auth_file": Path(self.temp.name) / "missing.json"})
         with self.assertRaisesRegex(ModelClientError, "credential"):
             StructuredModelClient(settings).api_key()
+
+    def test_runtime_key_overrides_disk_only_inside_context(self) -> None:
+        client = StructuredModelClient(self.settings)
+        self.assertEqual(client.api_key(), "test-secret")
+        with runtime_api_key("ephemeral-test-token"):
+            self.assertEqual(client.api_key(), "ephemeral-test-token")
+        self.assertEqual(client.api_key(), "test-secret")
 
 
 if __name__ == "__main__":

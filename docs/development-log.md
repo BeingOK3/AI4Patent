@@ -385,3 +385,16 @@
 - 测试：健康/API 定向 15 项通过；Execution/Workflow 定向 13 项通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q` 共 150 项通过；Skill `quick_validate.py` 通过；`pip check`、`compileall`、配置/Schema JSON、4 个 shell 脚本语法和 `git diff --check` 全部通过。
 - 提交主题：`fix(idea): [IDEA-TESTENV-001] restore live test and limitation gates`
 - 已知限制：受限沙箱中的 Starlette 同步 `TestClient` 线程/事件循环仍会挂起，项目判据必须使用真实 Linux 环境；在线结论仍受报告中明确的检索、创造性和价值限制约束。模型密钥仅用于临时测试进程，未写入跟踪文件。
+
+## 2026-07-16 — IDEA-BYOK-001
+
+- 类型：前端逐页 BYOK、Run 级临时凭证与持久化入口移除。
+- 目标：每次进入或刷新 IDEA 页面都要求用户重新输入自己的 API Token，且 Token 不进入配置文件、数据库、历史、日志、报告或浏览器存储。
+- 前端：新增密码型“API Token（本页临时使用）”输入框；`DOMContentLoaded`、`pageshow` 和 `pagehide` 均清空输入值以覆盖普通刷新与 bfcache 返回；创建和重跑均显式携带本页 Token，缺失时在创建 Case/Run 前阻止提交；未使用 localStorage、sessionStorage 或 Cookie。
+- 后端：创建 Run 和重跑请求使用 Pydantic `SecretStr` 严格要求非空 Token；Task Manager 只在进程内按 `run_id` 暂存，并通过 `ContextVar` 限定到对应异步执行上下文，完成、失败或取消后立即删除；Run 配置快照、SQLite 和 API 视图均不包含 Token。
+- 重启语义：服务不会持久化凭证。重启时遗留的 `QUEUED/RUNNING` Run 保留完整历史并明确进入 `FAILED / RUNTIME_API_KEY_REQUIRED_AFTER_RESTART`，用户重新输入 Token 后才能创建重跑 Run，不再从磁盘认证文件静默恢复。
+- 兼容与清理：移除会把明文密钥写入 `config/opencode/opencode.json` 和 `data/opencode/auth.json` 的旧 `/api/config` GET/POST 接口；健康状态改为 `model.runtime_required / per_run`，无服务器级密钥仍可启动并等待页面授权；CLI 只允许从指定环境变量读取 Token，不提供明文命令行参数。
+- 文档：同步更新 README、技术设计、Skill 和 Workflow API 恢复契约，明确网页逐页输入、CLI 临时环境变量与服务重启后的失败/重跑行为。
+- 测试：新增/调整 API、Task Manager、模型上下文、健康、前端和 Skill CLI 回归；定向 33 项全部通过；`PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -q` 共 154 项通过；`node --check frontend/app.js`、`compileall`、主应用 OpenAPI 必填字段及旧接口缺失检查、`git diff --check` 全部通过。
+- 提交主题：`feat(idea): [IDEA-BYOK-001] require ephemeral per-page API keys`
+- 已知限制：页面关闭或刷新不会中止已在同一后端进程执行的 Run，因为该 Run 的临时 Token 会保留到终态；后端进程重启后无法继续原 Run，这是“不持久化使用者 Token”的有意安全边界。

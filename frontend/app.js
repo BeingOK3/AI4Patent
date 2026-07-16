@@ -29,7 +29,16 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+function clearRuntimeApiKey() {
+  const input = $("apiToken");
+  if (input) input.value = "";
+}
+
+window.addEventListener("pageshow", clearRuntimeApiKey);
+window.addEventListener("pagehide", clearRuntimeApiKey);
+
 document.addEventListener("DOMContentLoaded", async () => {
+  clearRuntimeApiKey();
   $("evaluationDate").value = new Date().toISOString().slice(0, 10);
   $("ideaText").addEventListener("input", () => {
     $("ideaCount").textContent = `${$("ideaText").value.length} 字符`;
@@ -62,7 +71,10 @@ async function loadHealth() {
   try {
     const [health, cache] = await Promise.all([api("/api/system/health"), api("/api/system/cache")]);
     $("healthDot").className = `health-dot ${health.ok ? "ok" : "bad"}`;
-    $("healthText").textContent = health.ok ? "核心服务就绪" : "服务降级";
+    const modelNeedsToken = health.components?.model?.status === "runtime_required";
+    $("healthText").textContent = health.ok
+      ? (modelNeedsToken ? "核心服务就绪 · 等待本页 API Token" : "核心服务就绪")
+      : "服务降级";
     $("cacheText").textContent = `缓存 ${formatBytes(cache.total_bytes || 0)} / ${formatBytes(cache.max_bytes)}`;
   } catch (error) {
     $("healthDot").className = "health-dot bad";
@@ -143,6 +155,8 @@ async function createRun(event) {
   const submit = $("submitRun");
   submit.disabled = true;
   try {
+    const apiKey = $("apiToken").value.trim();
+    if (!apiKey) throw new Error("请输入本页使用的 API Token");
     let caseId = state.selectedCase?.case_id;
     const caseTitle = $("caseTitle").value.trim();
     if (!caseId) {
@@ -155,6 +169,7 @@ async function createRun(event) {
       state.selectedCase = created;
     }
     const payload = {
+      api_key: apiKey,
       input_text: $("ideaText").value.trim(),
       evaluation_date: $("evaluationDate").value,
       date_basis: $("dateBasis").value.trim() || "用户指定或提交日",
@@ -435,10 +450,23 @@ async function cancelSelectedRun() {
 
 async function rerunSelected() {
   if (!state.selectedRun) return;
-  const run = await api(`/api/idea/runs/${state.selectedRun.run_id}/rerun`, { method: "POST", body: "{}" });
-  await loadCases(run.case_id);
-  await activateRun(run);
-  subscribeToRun(run.run_id);
+  const apiKey = $("apiToken").value.trim();
+  if (!apiKey) {
+    setMessage("重新运行前，请输入本页使用的 API Token");
+    $("apiToken").focus();
+    return;
+  }
+  try {
+    const run = await api(`/api/idea/runs/${state.selectedRun.run_id}/rerun`, {
+      method: "POST",
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+    await loadCases(run.case_id);
+    await activateRun(run);
+    subscribeToRun(run.run_id);
+  } catch (error) {
+    setMessage(error.message);
+  }
 }
 
 async function deleteSelectedRun() {

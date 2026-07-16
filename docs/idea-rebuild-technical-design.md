@@ -164,7 +164,7 @@ config/ai4patent.json
 config/ai4patent.schema.json
 ```
 
-`ai4patent.json` 管理全部 AI4Patent 应用设置。模型服务凭证仍存放在专门的认证文件或环境变量中，不得把密钥复制进应用配置。
+`ai4patent.json` 管理全部 AI4Patent 应用设置。网页用户每次进入页面都必须重新输入模型 API Token；Token 只随 Run 创建/重跑请求进入后端进程内存，不得写入应用配置、认证文件、数据库、历史、日志、报告或浏览器存储。CLI 仅允许从当前进程指定的环境变量读取 Token，不接受命令行明文参数。
 
 OpenCode 自身配置由 `config/opencode/opencode.json` 承载，但后端使用的默认模型、功能开关、工作流、存储、缓存和检索策略均以 `config/ai4patent.json` 为准。
 
@@ -265,7 +265,7 @@ OpenCode 自身配置由 `config/opencode/opencode.json` 承载，但后端使�
 
 - 服务启动时必须读取并校验配置；
 - 配置无效时服务健康检查必须返回失败，不得静默使用散落在代码中的默认值；
-- 允许环境变量覆盖路径或密钥，但覆盖后的有效配置必须可查看；
+- 允许环境变量覆盖非敏感路径；密钥只作为单次 Run 的临时运行凭证且不得出现在有效配置快照中；
 - 每个 Run 保存启动时的配置快照；
 - 修改配置只影响新 Run，不得改变历史 Run 的解释；
 - 所有默认值只定义在配置或配置加载模块，业务代码中不得重复硬编码。
@@ -943,12 +943,12 @@ POST   /api/system/cache/cleanup
 - 深度核验不足 10 篇；
 - 用户上限触发；
 - 检索饱和停止；
-- 中途停止后恢复；
+- 同一服务进程内中途断开页面后继续执行；服务重启因临时 Token 丢失而明确失败，重新输入后才能重跑；
 - 单篇分析失败重试；
 - audit critical issue 阻止 `COMPLETED`；
 - `COMPLETED_WITH_LIMITATIONS` 仍生成明确结论；
 - 页面刷新后恢复进度；
-- 服务重启后恢复未完成任务。
+- 服务重启后保留未完成任务历史，并以 `RUNTIME_API_KEY_REQUIRED_AFTER_RESTART` 终止，不持久化 Token 自动恢复。
 
 ### 18.4 前端测试
 

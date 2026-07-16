@@ -19,9 +19,6 @@ FRONTEND = BASE / "frontend"
 WORKSPACE = BASE / "workspace"
 UPLOADS = WORKSPACE / "uploads"
 UPLOADS.mkdir(parents=True, exist_ok=True)
-CONFIG_DIR = BASE / "config" / "opencode"
-DATA_DIR = BASE / "data" / "opencode"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR = BASE / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
@@ -60,9 +57,9 @@ app.include_router(
 @app.on_event("startup")
 async def resume_idea_runs():
     if APP_CONFIG.workflow.resume_incomplete_runs_on_startup:
-        resumed = IDEA_TASKS.resume_incomplete()
-        if resumed:
-            logger.info("恢复 IDEA Runs: %s", resumed)
+        interrupted = IDEA_TASKS.resume_incomplete()
+        if interrupted:
+            logger.info("标记需要重新输入临时 API Token 的 IDEA Runs: %s", interrupted)
 
 
 def sse(d):
@@ -103,86 +100,6 @@ async def system_cache():
 @app.post("/api/system/cache/cleanup")
 async def system_cache_cleanup():
     return IDEA_CACHE.cleanup(force=True).__dict__
-
-
-# ===== 配置管理（一键傻瓜式） =====
-@app.get("/api/config")
-async def get_config():
-    cfg_path = CONFIG_DIR / "opencode.json"
-    auth_path = DATA_DIR / "auth.json"
-    result = {"configured": False, "provider": "", "model": "", "baseURL": "", "apiKey": ""}
-    if cfg_path.exists():
-        try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            full_model = cfg.get("model", "")
-            if "/" in full_model:
-                result["provider"] = full_model.split("/")[0]
-                result["model"] = full_model.split("/", 1)[1]
-            else:
-                result["model"] = full_model
-            p = cfg.get("provider", {}).get(result["provider"], {})
-            result["baseURL"] = p.get("options", {}).get("baseURL", "")
-        except Exception:
-            pass
-    if auth_path.exists():
-        try:
-            auth = json.loads(auth_path.read_text(encoding="utf-8"))
-            prov = result["provider"]
-            if prov and prov in auth and auth[prov].get("apiKey"):
-                result["configured"] = True
-                k = auth[prov]["apiKey"]
-                result["apiKey"] = k[:6] + "***" + k[-4:] if len(k) > 12 else "***"
-        except Exception:
-            pass
-    return result
-
-
-class ConfigReq(BaseModel):
-    provider: str = "agent-plan"
-    model: str = "glm-5.2"
-    baseURL: str = "https://ark.cn-beijing.volces.com/api/plan/v3"
-    apiKey: str = ""
-
-
-@app.post("/api/config")
-async def save_config(req: ConfigReq):
-    provider = req.provider.strip() or "custom"
-    model = req.model.strip() or "glm-5.2"
-    baseURL = req.baseURL.strip()
-    apiKey = req.apiKey.strip()
-    if not apiKey:
-        return {"ok": False, "error": "API Key 不能为空"}
-    # 以 opencode.json.example 为模板生成配置（EXA MCP 等设置自动继承）
-    example_path = CONFIG_DIR / "opencode.json.example"
-    if example_path.exists():
-        opencode_cfg = json.loads(example_path.read_text(encoding="utf-8-sig"))
-    else:
-        opencode_cfg = {"$schema": "https://opencode.ai/config.json"}
-    # 清除旧 provider，写入新 provider
-    old_providers = list(opencode_cfg.get("provider", {}).keys())
-    for k in old_providers:
-        opencode_cfg["provider"].pop(k)
-    opencode_cfg["provider"] = {
-        provider: {
-            "name": provider,
-            "npm": "@ai-sdk/openai-compatible",
-            "options": {"apiKey": apiKey, "baseURL": baseURL},
-            "models": {
-                model: {"name": model, "limit": {"context": 1048576, "output": 16384}}
-            }
-        }
-    }
-    opencode_cfg["model"] = f"{provider}/{model}"
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    (CONFIG_DIR / "opencode.json").write_text(
-        json.dumps(opencode_cfg, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    auth = {provider: {"apiKey": apiKey}}
-    (DATA_DIR / "auth.json").write_text(
-        json.dumps(auth, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-    logger.info(f"配置已保存: {provider}/{model} @ {baseURL}")
-    return {"ok": True, "model": f"{provider}/{model}"}
 
 
 # ===== 文件管理 =====

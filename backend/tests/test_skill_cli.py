@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -83,11 +84,14 @@ class SkillWorkflowCliTests(unittest.TestCase):
         FixtureHandler.health_ok = True
 
     def run_cli(self, *arguments):
+        environment = os.environ.copy()
+        environment["DEEPSEEK_API_KEY"] = "fixture-runtime-token"
         return subprocess.run(
             [sys.executable, str(SCRIPT), *arguments, "--base-url", self.base_url],
             text=True,
             capture_output=True,
             timeout=5,
+            env=environment,
         )
 
     def test_run_submits_waits_and_returns_only_authoritative_report(self) -> None:
@@ -115,6 +119,30 @@ class SkillWorkflowCliTests(unittest.TestCase):
         run_body = FixtureHandler.calls[1][2]
         self.assertEqual(run_body["settings"]["deep_review_min"], 10)
         self.assertEqual(run_body["settings"]["candidate_max"], 80)
+        self.assertEqual(run_body["api_key"], "fixture-runtime-token")
+        self.assertNotIn("fixture-runtime-token", result.stdout)
+        self.assertNotIn("fixture-runtime-token", result.stderr)
+
+    def test_missing_runtime_token_does_not_create_an_orphan_case(self) -> None:
+        environment = os.environ.copy()
+        environment.pop("DEEPSEEK_API_KEY", None)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "start",
+                "--idea",
+                "long enough technical idea",
+                "--base-url",
+                self.base_url,
+            ],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            env=environment,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(FixtureHandler.calls, [])
 
     def test_unhealthy_core_returns_nonzero(self) -> None:
         FixtureHandler.health_ok = False

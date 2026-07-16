@@ -36,6 +36,77 @@ class ModelClientError(RuntimeError):
     pass
 
 
+_CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_LATIN_PATTERN = re.compile(r"[A-Za-z]")
+
+
+def _is_primarily_chinese(value: str) -> bool:
+    cjk_count = len(_CJK_PATTERN.findall(value))
+    latin_count = len(_LATIN_PATTERN.findall(value))
+    return cjk_count > 0 and cjk_count * 4 >= latin_count
+
+
+def _validate_user_facing_language(agent_name: str, output: AgentModel) -> None:
+    """Reject English-only judgment text so the structured retry can correct it."""
+    data = output.model_dump(mode="json")
+    texts: list[tuple[str, str]] = []
+
+    def add(path: str, value: Any) -> None:
+        if isinstance(value, str) and value.strip():
+            texts.append((path, value))
+
+    def add_list(path: str, values: Any) -> None:
+        if isinstance(values, list):
+            for index, value in enumerate(values):
+                add(f"{path}[{index}]", value)
+
+    if agent_name == "patent-document-analyzer":
+        for field in (
+            "technical_problem",
+            "technical_solution",
+            "technical_effect",
+            "application_scenario",
+            "independent_claim_summary",
+            "relevance_rationale",
+        ):
+            add(field, data.get(field))
+        add_list("limitations", data.get("limitations"))
+        for index, mapping in enumerate(data.get("feature_mappings", [])):
+            add(f"feature_mappings[{index}].rationale", mapping.get("rationale"))
+    elif agent_name == "patent-inventive-step-analyzer":
+        add("objective_technical_problem", data.get("objective_technical_problem"))
+        add("overall_rationale", data.get("overall_rationale"))
+        add_list("limitations", data.get("limitations"))
+        for index, feature in enumerate(data.get("distinguishing_features", [])):
+            add(f"distinguishing_features[{index}].rationale", feature.get("rationale"))
+    elif agent_name == "patent-value-analyzer":
+        for field in ("detectability", "workaround_difficulty", "technical_market_value"):
+            add(f"{field}.rationale", data.get(field, {}).get("rationale"))
+        add("rationale", data.get("rationale"))
+        add_list("alternative_paths", data.get("alternative_paths"))
+        add_list("limitations", data.get("limitations"))
+    elif agent_name == "patent-evidence-auditor":
+        for index, issue in enumerate(data.get("issues", [])):
+            add(f"issues[{index}].message", issue.get("message"))
+    elif agent_name == "patent-report-composer":
+        for field in (
+            "executive_summary",
+            "novelty_statement",
+            "inventive_step_statement",
+            "value_statement",
+            "simulated_office_action",
+        ):
+            add(field, data.get(field))
+        add_list("action_recommendations", data.get("action_recommendations"))
+
+    invalid = [path for path, text in texts if not _is_primarily_chinese(text)]
+    if invalid:
+        raise ValueError(
+            "user-facing text must be primarily Simplified Chinese: "
+            + ", ".join(invalid[:12])
+        )
+
+
 @contextmanager
 def runtime_model_config(config: RuntimeModelConfig) -> Iterator[None]:
     """Make one page-supplied model configuration available to one async Run."""
@@ -112,6 +183,7 @@ class StructuredModelClient:
                 content = self._content(response)
                 parsed = json.loads(self._strip_fence(content))
                 output = validate_agent_output(agent_name, parsed)
+                _validate_user_facing_language(agent_name, output)
                 usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
                 return AgentCallResult(
                     agent_name=agent_name,
@@ -140,7 +212,8 @@ class StructuredModelClient:
                     {
                         "role": "user",
                         "content": (
-                            "The previous JSON failed validation. Correct the structure and return only JSON. "
+                            "The previous JSON failed validation. Correct its structure and ensure every "
+                            "user-facing explanation is written in Simplified Chinese, then return only JSON. "
                             f"Validation summary: {errors[-1]}"
                         ),
                     }

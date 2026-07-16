@@ -38,6 +38,40 @@ def valid_parser_output():
     }
 
 
+def value_output(*, chinese: bool):
+    if chinese:
+        rationales = ["可从系统行为观察", "存在替代实现路径", "具备一定技术价值"]
+        paths = ["采用统一编码器处理", "在识别结果后增加结构化处理"]
+        overall = "建议先补充可测量的实施细节后再申请"
+        limitations = ["缺少独立市场数据"]
+    else:
+        rationales = ["observable behavior", "alternative designs exist", "moderate value"]
+        paths = ["use one encoder", "post-process the OCR result"]
+        overall = "add measurable implementation details before filing"
+        limitations = ["no independent market dataset"]
+    return {
+        "detectability": {
+            "rating": 4,
+            "rationale": rationales[0],
+            "evidence_basis": ["IDEA:F1"],
+        },
+        "workaround_difficulty": {
+            "rating": 3,
+            "rationale": rationales[1],
+            "evidence_basis": ["IDEA:F1"],
+        },
+        "technical_market_value": {
+            "rating": 3,
+            "rationale": rationales[2],
+            "evidence_basis": ["NOVELTY:CONCLUSION"],
+        },
+        "alternative_paths": paths,
+        "recommendation": "ADJUST_THEN_FILE",
+        "rationale": overall,
+        "limitations": limitations,
+    }
+
+
 class StructuredModelClientTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -112,6 +146,29 @@ class StructuredModelClientTests(unittest.TestCase):
             )
         )
         self.assertEqual(result.output.title, "Cache scheduling")
+
+    def test_english_user_facing_judgments_retry_until_chinese(self) -> None:
+        responses = [value_output(chinese=False), value_output(chinese=True)]
+        payloads = []
+
+        async def transport(payload, headers):
+            payloads.append(payload)
+            return {
+                "choices": [
+                    {"message": {"content": json.dumps(responses.pop(0), ensure_ascii=False)}}
+                ]
+            }
+
+        result = asyncio.run(
+            StructuredModelClient(self.settings, transport=transport).complete(
+                "patent-value-analyzer",
+                system_prompt="Assess value.",
+                input_payload={"allowed_basis_ids": ["IDEA:F1", "NOVELTY:CONCLUSION"]},
+            )
+        )
+        self.assertEqual(result.attempts, 2)
+        self.assertIn("建议先补充", result.output.rationale)
+        self.assertIn("Simplified Chinese", payloads[1]["messages"][-1]["content"])
 
     def test_missing_credential_fails_before_transport(self) -> None:
         settings = self.settings.model_copy(update={"auth_file": Path(self.temp.name) / "missing.json"})

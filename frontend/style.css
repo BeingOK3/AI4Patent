@@ -95,7 +95,9 @@ input, textarea, select { width: 100%; border: 1px solid #ccd3ce; border-radius:
 input, select { height: 38px; padding: 0 10px; }
 textarea { padding: 11px; resize: vertical; line-height: 1.65; }
 input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+input[readonly] { border-style: dashed; background: #f2f4f1; color: var(--muted); cursor: not-allowed; }
 .field-meta { display: flex; justify-content: space-between; margin-top: 5px; color: var(--muted); font-size: 9px; }
+.snapshot-notice { margin: -4px 0 12px; padding: 9px 11px; border: 1px solid #c8ded4; border-radius: 9px; background: var(--accent-soft); color: #31594a; font-size: 10px; line-height: 1.5; }
 .form-grid { display: grid; gap: 10px; }
 .form-grid.two { grid-template-columns: 1fr 1fr; }
 .form-grid.three { grid-template-columns: repeat(3, 1fr); }

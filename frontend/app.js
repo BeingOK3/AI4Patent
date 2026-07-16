@@ -41,6 +41,26 @@ const JUDGMENT_LABELS = {
   NO: "无组合动机",
 };
 
+const LIMITATION_LABELS = {
+  PROVIDER_DEGRADED: "检索服务降级",
+  DOCUMENT_FETCH_FAILED: "全文抓取失败",
+  DEEP_REVIEW_FETCHED_BELOW_MINIMUM: "深读数量不足",
+  DEEP_REVIEW_IDENTIFIER_MISSING: "候选缺少公开号",
+  DUPLICATE_DEEP_REVIEW_SELECTION: "重复深读候选",
+  DEEP_REVIEW_CANDIDATE_NOT_FOUND: "深读候选无法定位",
+  INSUFFICIENT_RELEVANT_DEEP_REVIEWS: "相关文献不足",
+  NOVELTY_LIMITATION: "新颖性分析限制",
+  INVENTIVE_LIMITATION: "创造性分析限制",
+  VALUE_LIMITATION: "价值分析限制",
+  LIMITATION: "分析限制",
+};
+
+const AUDIT_CODE_LABELS = {
+  AUDIT_COMPLETED: "审计完成",
+  EVIDENCE_HASH_MISMATCH: "证据哈希不一致",
+  MODEL_SEMANTIC_OVERSTATEMENT: "语义表述可能过度",
+};
+
 const state = {
   cases: [],
   selectedCase: null,
@@ -131,8 +151,8 @@ function renderCases() {
     card.dataset.caseId = item.case_id;
     if (state.selectedCase?.case_id === item.case_id) card.classList.add("active");
     fragment.querySelector(".case-name").textContent = item.title;
-    fragment.querySelector(".case-meta").textContent = `${item.run_count} 个 Run · ${formatTime(item.latest_run_at || item.created_at)}`;
-    fragment.querySelector(".case-main").addEventListener("click", () => selectCase(item.case_id));
+    fragment.querySelector(".case-meta").textContent = `${item.run_count} 个不可变 Run · Case ${item.case_id.slice(0, 6)} · ${formatTime(item.latest_run_at || item.created_at)}`;
+    fragment.querySelector(".case-main").addEventListener("click", () => selectCase(item.case_id, true, true));
     fragment.querySelector(".case-delete").addEventListener("click", (event) => {
       event.stopPropagation();
       deleteCase(item.case_id, item.title);
@@ -141,9 +161,10 @@ function renderCases() {
   }
 }
 
-async function selectCase(caseId, render = true) {
+async function selectCase(caseId, render = true, activateLatest = false) {
   state.selectedCase = await api(`/api/idea/cases/${caseId}`);
   $("caseTitle").value = state.selectedCase.title;
+  $("caseTitle").readOnly = true;
   $("activeCaseBadge").textContent = state.selectedCase.title;
   if (render) renderCases();
   const card = document.querySelector(`[data-case-id="${cssEscape(caseId)}"]`);
@@ -159,12 +180,20 @@ async function selectCase(caseId, render = true) {
     const dot = el("span", `run-dot ${statusClass(run.status)}`);
     const copy = el("span", "run-copy");
     copy.append(
-      el("strong", "", `${run.status} · ${run.run_id.slice(0, 8)}`),
-      el("span", "", `${run.evaluation_date} · ${formatTime(run.created_at)}`),
+      el("strong", "", `${statusLabel(run.status)} · ${truncateText(run.input_preview || "未保存输入摘要", 34)}`),
+      el("span", "", `${run.evaluation_date} · ${run.model} · ${formatTime(run.created_at)}`),
     );
+    button.title = `Run ${run.run_id}；输入快照 ${run.input_hash || "—"}`;
     button.append(dot, copy);
+    button.dataset.runId = run.run_id;
     button.addEventListener("click", () => selectRun(run.run_id));
     runList.append(button);
+  }
+  const activeRunBelongsHere = state.selectedRun?.case_id === caseId;
+  if (activateLatest && state.selectedCase.runs.length && !activeRunBelongsHere) {
+    await selectRun(state.selectedCase.runs[0].run_id, false);
+  } else if (activateLatest && !state.selectedCase.runs.length) {
+    prepareEmptyCase();
   }
 }
 
@@ -176,12 +205,18 @@ function resetWorkspace() {
   state.report = null;
   state.activeTab = "overview";
   $("runForm").reset();
+  $("caseTitle").readOnly = false;
   clearRuntimeApiConfig();
   $("evaluationDate").value = new Date().toISOString().slice(0, 10);
   $("searchMode").value = "standard";
   applyModeDefaults();
   $("ideaCount").textContent = "0 字符";
   $("activeCaseBadge").textContent = "将新建 Case";
+  $("inputPanelTitle").textContent = "新建 IDEA Run";
+  $("runSnapshotNotice").classList.add("hidden");
+  $("runSnapshotNotice").textContent = "";
+  $("runInputMode").textContent = "新 Run 输入；提交后形成不可变快照";
+  $("submitRun").textContent = "开始受控评估";
   document.querySelectorAll(".case-card").forEach((item) => item.classList.remove("active"));
   $("cancelRun").classList.add("hidden");
   $("rerunBtn").classList.add("hidden");
@@ -253,7 +288,7 @@ async function createRun(event) {
   }
 }
 
-async function selectRun(runId) {
+async function selectRun(runId, refreshCase = true) {
   closeEvents();
   stopDebugPolling();
   const run = await api(`/api/idea/runs/${runId}`);
@@ -263,11 +298,15 @@ async function selectRun(runId) {
   await activateRun(run);
   if (isTerminal(run.status)) await loadReport(runId);
   else subscribeToRun(runId);
-  if (state.selectedCase) await selectCase(state.selectedCase.case_id);
+  if (refreshCase) await selectCase(run.case_id, true, false);
+  document.querySelectorAll(".run-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.runId === runId);
+  });
 }
 
 async function activateRun(run) {
   state.selectedRun = run;
+  restoreRunSnapshot(run);
   renderProgress(run);
   renderRunActions(run);
   startDebugPolling(run.run_id, !isTerminal(run.status));
@@ -278,6 +317,52 @@ async function activateRun(run) {
     $("emptyResult").querySelector("h3").textContent = "评估正在执行";
     $("emptyResult").querySelector("p").textContent = "进度由持久 Harness 状态驱动；关闭页面不会丢失任务。";
   }
+}
+
+function restoreRunSnapshot(run) {
+  $("caseTitle").value = state.selectedCase?.title || $("caseTitle").value;
+  $("caseTitle").readOnly = true;
+  $("ideaText").value = run.input_text || "";
+  $("ideaCount").textContent = `${$("ideaText").value.length} 字符`;
+  $("evaluationDate").value = run.evaluation_date;
+  $("dateBasis").value = run.date_basis || "用户指定或提交日";
+  const mode = run.settings?.search_mode || "standard";
+  $("searchMode").value = MODE_DEFAULTS[mode] ? mode : "standard";
+  const defaults = MODE_DEFAULTS[$("searchMode").value];
+  $("candidateMax").value = run.settings?.candidate_max ?? defaults.candidate_max;
+  $("deepMin").value = run.settings?.deep_review_min ?? defaults.deep_review_min;
+  $("deepMax").value = run.settings?.deep_review_max ?? defaults.deep_review_max;
+  $("inputPanelTitle").textContent = "历史 Run 输入快照";
+  $("runSnapshotNotice").textContent = `正在查看 Run ${run.run_id.slice(0, 8)} 的不可变输入。直接编辑下方内容并提交会在当前 Case 下创建新 Run，不会覆盖该历史记录；“重新运行”则复制原输入和预算。`;
+  $("runSnapshotNotice").classList.remove("hidden");
+  $("runInputMode").textContent = `历史快照 ${String(run.input_hash || "").slice(0, 12)}；编辑只影响新 Run`;
+  $("submitRun").textContent = "以当前输入新建 Run";
+}
+
+function prepareEmptyCase() {
+  closeEvents();
+  stopDebugPolling();
+  state.selectedRun = null;
+  state.report = null;
+  $("ideaText").value = "";
+  $("ideaCount").textContent = "0 字符";
+  $("evaluationDate").value = new Date().toISOString().slice(0, 10);
+  $("dateBasis").value = "用户指定或提交日";
+  $("searchMode").value = "standard";
+  applyModeDefaults();
+  $("inputPanelTitle").textContent = "在当前 Case 新建 Run";
+  $("runSnapshotNotice").textContent = "这个 Case 还没有 Run。提交技术方案后将创建第一份不可变输入快照。";
+  $("runSnapshotNotice").classList.remove("hidden");
+  $("runInputMode").textContent = "新 Run 输入；提交后形成不可变快照";
+  $("submitRun").textContent = "开始受控评估";
+  $("cancelRun").classList.add("hidden");
+  $("rerunBtn").classList.add("hidden");
+  $("deleteRunBtn").classList.add("hidden");
+  $("markdownLink").classList.add("hidden");
+  $("reportView").classList.add("hidden");
+  $("emptyResult").classList.remove("hidden");
+  renderEmptyProgress();
+  renderEmptyDebug();
 }
 
 function subscribeToRun(runId) {
@@ -491,6 +576,12 @@ function renderActiveTab() {
   const report = state.report;
   const root = $("tabContent");
   root.replaceChildren();
+  if (reportHasLegacyEnglish(report)) {
+    root.append(section(
+      "历史报告语言提示",
+      "该 Run 由旧版本生成，部分判断原文为英文。为保持历史报告与 Manifest 不被改写，界面以中文说明替代这些旧文本；点击“重新运行”可生成通过中文硬校验的新报告。",
+    ));
+  }
   if (state.activeTab === "overview") renderOverview(root, report);
   if (state.activeTab === "features") renderFeatures(root, report);
   if (state.activeTab === "search") renderSearch(root, report);
@@ -572,7 +663,11 @@ function renderInventive(root, report) {
     const routeTitle = el("strong");
     routeTitle.append(document.createTextNode(`${route.route_id} · D1 `), patentLink(route.d1_publication_number));
     header.append(routeTitle, tag(route.status, route.status));
-    card.append(header, el("p", "", route.objective_technical_problem), el("p", "small", route.overall_rationale));
+    card.append(
+      header,
+      el("p", "", chineseText(route.objective_technical_problem, "该历史 Run 的客观技术问题说明未按中文输出。")),
+      el("p", "small", chineseText(route.overall_rationale, "该历史 Run 的创造性总体判断由旧版本以英文生成；请重新运行以获得中文判断。")),
+    );
     for (const item of route.distinguishing_features) {
       const detail = el("p");
       detail.append(document.createTextNode(`${item.feature_id}：D2 `));
@@ -585,7 +680,10 @@ function renderInventive(root, report) {
         detail.append(document.createTextNode("无"));
       }
       detail.append(document.createTextNode(` · 组合动机：${judgmentLabel(item.motivation_to_combine)}`));
-      card.append(detail);
+      card.append(
+        detail,
+        el("p", "small", chineseText(item.rationale, "该区别特征的旧版判断说明未按中文输出。")),
+      );
     }
     root.append(card);
   }
@@ -598,9 +696,11 @@ function renderValue(root, report) {
     valueFact("可取证性", value.detectability), valueFact("规避难度", value.workaround_difficulty),
     valueFact("技术/市场价值", value.technical_market_value),
   );
-  root.append(grid, section("申请建议", `${judgmentLabel(value.recommendation)}：${value.rationale}`));
+  root.append(grid, section("申请建议", `${judgmentLabel(value.recommendation)}：${chineseText(value.rationale, "该历史 Run 的价值判断由旧版本以英文生成；请重新运行以获得中文判断。")}`));
   const paths = el("ul", "limitation-list");
-  for (const path of value.alternative_paths) paths.append(el("li", "", path));
+  for (const path of value.alternative_paths) {
+    paths.append(el("li", "", chineseText(path, "该历史 Run 的替代路径由旧版本以英文生成；请重新运行以获得中文说明。")));
+  }
   const block = el("div", "section-block");
   block.append(el("h3", "", "替代路径"), paths);
   root.append(block);
@@ -613,7 +713,11 @@ function renderAudit(root, report) {
   root.append(facts, el("div", "section-block"));
   for (const finding of report.audit.findings) {
     const item = el("article", "finding");
-    item.append(tag(finding.severity, finding.severity), el("strong", "", ` ${finding.code}`), el("p", "", finding.message));
+    item.append(
+      tag(finding.severity, finding.severity),
+      el("strong", "", ` ${AUDIT_CODE_LABELS[finding.code] || finding.code}`),
+      el("p", "", chineseText(finding.message, auditFallback(finding.code))),
+    );
     root.append(item);
   }
   const limitations = el("ul", "limitation-list");
@@ -703,7 +807,7 @@ function fact(label, value) {
 function valueFact(label, dimension) {
   const score = ({ LOW: 1, MEDIUM: 3, HIGH: 5 })[dimension.rating] ?? dimension.rating;
   const item = fact(label, `${score}/5`);
-  item.append(el("p", "small", dimension.rationale));
+  item.append(el("p", "small", chineseText(dimension.rationale, `该历史 Run 的${label}评分理由未按中文输出。`)));
   return item;
 }
 
@@ -762,11 +866,60 @@ function safePatentUrl(publicationNumber, explicitUrl) {
 
 function limitationText(item) {
   const code = item?.code || "LIMITATION";
-  if (item?.message) return `${code}：${item.message}`;
-  if (code === "PROVIDER_DEGRADED") return `${code}：检索服务 ${item.provider} 本次调用全部失败，已按降级路径继续。`;
-  if (code === "DOCUMENT_FETCH_FAILED") return `${code}：专利 ${item.publication_number || "未知"} 的全文抓取失败。`;
-  if (code === "DEEP_REVIEW_FETCHED_BELOW_MINIMUM") return `${code}：成功获取 ${item.fetched} 篇全文，低于要求的 ${item.required} 篇。`;
-  return `${code}：${JSON.stringify(item)}`;
+  const label = LIMITATION_LABELS[code] || code;
+  if (item?.message) return `${label}：${chineseText(item.message, limitationFallback(code))}`;
+  if (code === "PROVIDER_DEGRADED") return `${label}：检索服务 ${item.provider} 本次调用全部失败，已按降级路径继续。`;
+  if (code === "DOCUMENT_FETCH_FAILED") return `${label}：专利 ${item.publication_number || "未知"} 的全文抓取失败。`;
+  if (code === "DEEP_REVIEW_FETCHED_BELOW_MINIMUM") return `${label}：成功获取 ${item.fetched} 篇全文，低于要求的 ${item.required} 篇。`;
+  return `${label}：存在已记录的结构化限制，详细字段可在调试记录中查看。`;
+}
+
+function chineseText(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return "—";
+  return isPrimarilyChinese(text) ? text : fallback;
+}
+
+function isPrimarilyChinese(value) {
+  const text = String(value || "");
+  const cjkCount = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/gu) || []).length;
+  const latinCount = (text.match(/[A-Za-z]/g) || []).length;
+  return cjkCount > 0 && cjkCount * 4 >= latinCount;
+}
+
+function limitationFallback(code) {
+  return ({
+    INVENTIVE_LIMITATION: "现有 D2 证据不足或可信度有限，创造性判断存在限制。",
+    VALUE_LIMITATION: "现有证据不足以支持更确定的价值判断。",
+    NOVELTY_LIMITATION: "现有检索与证据对新颖性判断形成限制。",
+  })[code] || "该历史限制说明由旧版本以英文生成；请重新运行以获得中文说明。";
+}
+
+function auditFallback(code) {
+  return ({
+    AUDIT_COMPLETED: "确定性校验与语义证据审计均已完成，未发现问题。",
+    MODEL_SEMANTIC_OVERSTATEMENT: "审计发现结论表述可能超出所引用证据的支持范围。",
+  })[code] || "该历史审计说明由旧版本以英文生成；请重新运行以获得中文说明。";
+}
+
+function reportHasLegacyEnglish(report) {
+  const texts = [];
+  for (const route of report.inventiveness || []) {
+    texts.push(route.objective_technical_problem, route.overall_rationale, ...(route.limitations || []));
+    for (const feature of route.distinguishing_features || []) texts.push(feature.rationale);
+  }
+  const value = report.value_assessment || {};
+  texts.push(
+    value.rationale,
+    value.detectability?.rationale,
+    value.workaround_difficulty?.rationale,
+    value.technical_market_value?.rationale,
+    ...(value.alternative_paths || []),
+    ...(value.limitations || []),
+  );
+  for (const finding of report.audit?.findings || []) texts.push(finding.message);
+  for (const limitation of report.limitations || []) texts.push(limitation?.message);
+  return texts.some((text) => text && !isPrimarilyChinese(text));
 }
 
 function el(tagName, className = "", text) {
@@ -817,6 +970,11 @@ function formatBytes(bytes) {
 
 function formatNumber(value) {
   return typeof value === "number" ? value.toFixed(2) : "—";
+}
+
+function truncateText(value, maximum) {
+  const text = String(value || "").trim();
+  return text.length > maximum ? `${text.slice(0, maximum)}…` : text;
 }
 
 function setMessage(message) { $("formMessage").textContent = message || ""; }

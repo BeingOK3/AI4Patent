@@ -66,7 +66,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertNotEqual(first["run_id"], second["run_id"])
         self.assertEqual(second["parent_run_id"], first["run_id"])
         self.assertEqual(self.db.get_run(first["run_id"])["input_text"], "第一版技术方案")
-        self.assertEqual(len(self.db.get_case(case["case_id"])["runs"]), 2)
+        history = self.db.get_case(case["case_id"])["runs"]
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0]["input_preview"], "第二版技术方案")
+        self.assertEqual(history[1]["input_hash"], first["input_hash"])
+
+    def test_case_titles_are_unique_after_trimming_and_case_insensitive(self) -> None:
+        self.db.create_case("OCR 结构识别")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.db.create_case("  OCR 结构识别  ")
+        self.db.create_case("Cache Control")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.db.create_case("cache control")
 
     def test_input_and_configuration_cannot_be_updated(self) -> None:
         case = self.db.create_case("不可变测试")

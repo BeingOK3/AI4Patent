@@ -230,7 +230,12 @@ def create_idea_router(
 
     @router.post("/cases")
     async def create_case(request: CreateCaseRequest):
-        return database.create_case(request.title)
+        try:
+            return database.create_case(request.title)
+        except ValueError as exc:
+            if "already exists" in str(exc):
+                raise HTTPException(409, "Case 名称已存在，请使用唯一、可辨识的方案组名称")
+            raise HTTPException(422, "Case 名称不能为空")
 
     @router.get("/cases")
     async def list_cases():
@@ -498,7 +503,10 @@ def _run_view(database: Database, harness: WorkflowHarness, run_id: str) -> dict
         "case_id": run["case_id"],
         "parent_run_id": run["parent_run_id"],
         "status": run["status"],
+        "input_text": run["input_text"],
+        "input_hash": run["input_hash"],
         "evaluation_date": run["evaluation_date"],
+        "date_basis": run["date_basis"],
         "analysis_scope": run["analysis_scope"],
         "model": run["model"],
         "base_url": model_snapshot.get("base_url"),

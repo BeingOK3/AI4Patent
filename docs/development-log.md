@@ -425,3 +425,15 @@
 - 测试：新增 URL-only 相关候选、旧检查点空值/重复值、内部异常取消兄弟任务三项回归；检索与筛选定向 15 项全部通过；真实 Linux 网络命名空间下完整 162 项全部通过。
 - 提交主题：`fix(idea): [IDEA-FETCH-001] harden deep-review fetch queue`
 - 历史语义：原失败 Run 和日志保持不可变作为缺陷证据；修复后的重跑会创建新 Run，不改写旧终态。
+
+## 2026-07-16 — IDEA-HISTORY-I18N-001
+
+- 类型：Case/Run 产品语义复审、历史输入恢复与中文输出硬门禁。
+- 复审结论：Case 是同一技术方案的历史分组，不参与模型判断；Run 才是一次不可覆盖的完整评估。数据库原本已把每次 Run 的输入保存在独立 `run_inputs` 行并禁止更新，但 Run API 视图遗漏 `input_text/input_hash/date_basis`，前端历史只显示状态、短 ID 和 Markdown 结果，无法观察或复用每次输入差异。Case 标题也允许重名，进一步降低辨识度。
+- Case/Run 优化：新 Case 标题去除首尾空格后按英文大小写不敏感保持唯一，冲突返回 409；历史卡增加短 Case ID，Run 增加输入摘要和哈希；点击其他 Case 自动打开最新 Run，点击任意 Run 恢复完整 IDEA、评估日、日期依据和检索预算。历史表单明确标识不可变快照，编辑后提交创建同 Case 新 Run，“重新运行”复制原输入和预算，两者均不覆盖旧记录。
+- 中文门禁：结构化模型客户端对文献判断、创造性、价值、审计与报告的全部用户可见字段执行中文占比校验；英文或明显以英文为主的文本触发结构化自动重试，耗尽后步骤失败，不允许英文判断进入新报告。创造性和价值 Prompt 同步强化全部说明字段使用简体中文。
+- 历史兼容：既有英文 `report.json/report.md/manifest.json` 保持不可变；前端识别旧英文创造性、价值、审计和限制文本，显示中文说明与明确的重新运行提示，不伪造或改写历史证据。
+- 涉及文件：`backend/idea/database.py`、`backend/idea/api.py`、`backend/idea/model_client.py`、`backend/idea/inventiveness.py`、`backend/idea/value_analysis.py`、`frontend/index.html`、`frontend/app.js`、`frontend/style.css`、相关测试、README、技术设计和开发日志。
+- 测试：数据库、模型客户端、前端、创造性、价值和审计定向 33 项通过；IDEA API 12 项通过；真实 Linux 环境完整 165 项通过；`node --check frontend/app.js`、`compileall` 和 `git diff --check` 通过。
+- 提交主题：`feat(idea): [IDEA-HISTORY-I18N-001] clarify cases and enforce Chinese output`
+- 迁移说明：既有重名 Case 不改写、不合并；短 Case ID 保证可辨识。唯一标题规则只约束之后的新建 Case。

@@ -111,6 +111,12 @@ class IdeaApiTests(unittest.TestCase):
 
         detail = self.client.get(f"/api/idea/runs/{run['run_id']}").json()
         self.assertEqual(detail["progress"]["total_steps"], 11)
+        self.assertEqual(
+            detail["input_text"],
+            "A cache controller computes token heat and evicts cold entries.",
+        )
+        self.assertEqual(detail["date_basis"], "用户指定或提交日")
+        self.assertEqual(len(detail["input_hash"]), 64)
         rerun = self.client.post(
             f"/api/idea/runs/{run['run_id']}/rerun",
             json={
@@ -124,6 +130,10 @@ class IdeaApiTests(unittest.TestCase):
         self.assertEqual(rerun["model"], "rerun-model")
         history = self.client.get(f"/api/idea/cases/{case['case_id']}").json()
         self.assertEqual(len(history["runs"]), 2)
+        self.assertIn("cache controller", history["runs"][0]["input_preview"])
+        self.assertEqual(
+            self.db.get_run(run["run_id"])["input_text"], detail["input_text"]
+        )
 
         deleted = self.client.request(
             "DELETE", f"/api/idea/runs/{rerun['run_id']}", json={"operator_label": "tester"}
@@ -132,6 +142,15 @@ class IdeaApiTests(unittest.TestCase):
         self.assertEqual(
             self.client.get(f"/api/idea/runs/{rerun['run_id']}").status_code, 404
         )
+
+    def test_duplicate_case_titles_are_rejected_as_conflicts(self) -> None:
+        first = self.client.post("/api/idea/cases", json={"title": "OCR 结构识别"})
+        duplicate = self.client.post(
+            "/api/idea/cases", json={"title": "  OCR 结构识别  "}
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertIn("名称已存在", duplicate.json()["detail"])
 
     def test_invalid_custom_limits_fail_before_run_creation(self) -> None:
         case = self.create_case()

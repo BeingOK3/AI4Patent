@@ -19,7 +19,8 @@ novelty/inventive conclusions, do not search, and do not invent patent or market
 evidence_basis entry must be one of the supplied basis IDs. State uncertainty in limitations.
 Score every dimension with an integer from 1 to 5, where 1 is very low, 2 is low, 3 is medium,
 4 is high, and 5 is very high. A higher workaround-difficulty score means the protected design
-is harder for a competitor to avoid. Explain every score in Simplified Chinese.
+is harder for a competitor to avoid. Write every rationale, alternative path, recommendation
+explanation, and limitation in Simplified Chinese.
 """
 
 

@@ -23,6 +23,7 @@ explain whether a skilled person had a supported motivation to combine. Never se
 patent/evidence ID, or change the novelty result. Return the supplied route_id and D1 publication
 exactly. If any required D2 teaching or combination motivation lacks evidence, return
 NEED_MORE_EVIDENCE or UNCERTAIN rather than NOT_INVENTIVE.
+Write the objective technical problem, every rationale, and every limitation in Simplified Chinese.
 """
 
 

@@ -27,7 +27,7 @@
           <p class="section-kicker">SHARED HISTORY</p>
           <h2>评估记录</h2>
         </div>
-        <button id="newCaseBtn" class="icon-button" title="新建空白 Case">＋</button>
+        <button id="newCaseBtn" class="icon-button" title="新建空白方案组">＋</button>
       </div>
       <div id="caseList" class="case-list" aria-live="polite"></div>
     </aside>
@@ -36,10 +36,12 @@
       <div class="panel-heading">
         <div>
           <p class="section-kicker">CONTROLLED INPUT</p>
-          <h2>新建 IDEA Run</h2>
+          <h2 id="inputPanelTitle">新建 IDEA Run</h2>
         </div>
         <span id="activeCaseBadge" class="badge">未选择 Case</span>
       </div>
+
+      <div id="runSnapshotNotice" class="snapshot-notice hidden" role="status"></div>
 
       <form id="runForm">
         <label for="modelBaseUrl">模型 API（本页临时使用）</label>
@@ -63,14 +65,14 @@
           <span>刷新、关闭或点击“＋”后必须重新输入；API Key 不写入历史、日志或浏览器存储</span>
         </div>
 
-        <label for="caseTitle">Case 名称</label>
+        <label for="caseTitle">方案组名称（Case）</label>
         <input id="caseTitle" maxlength="200" placeholder="例如：Token 热度缓存淘汰">
-        <div class="field-meta"><span>用于把同一技术方案的多次 Run 归为一组，不参与模型判断</span></div>
+        <div class="field-meta"><span>名称必须唯一；用于归纳同一方案的不可变 Run，不参与模型判断</span></div>
 
         <label for="ideaText">技术方案 / IDEA</label>
         <textarea id="ideaText" minlength="10" maxlength="200000" rows="10" required
           placeholder="说明应用场景、技术问题、必要技术手段、数据流/控制关系和预期技术效果。描述越具体，检索和特征拆分越稳定。"></textarea>
-        <div class="field-meta"><span id="ideaCount">0 字符</span><span>内部共享，不做自动删除</span></div>
+        <div class="field-meta"><span id="ideaCount">0 字符</span><span id="runInputMode">新 Run 输入；提交后形成不可变快照</span></div>
 
         <div class="form-grid two">
           <div>

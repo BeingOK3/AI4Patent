@@ -378,8 +378,8 @@ Provider 不是普通用户设置项。前端只显示 EXA、本地 Google Paten
 
 历史区域显示：
 
-- Case 标题；
-- Run 编号；
+- 唯一的 Case 标题和短 Case ID；
+- Run 状态、输入摘要和输入哈希；
 - 创建时间；
 - 状态；
 - 新颖性结论；
@@ -391,6 +391,7 @@ Provider 不是普通用户设置项。前端只显示 EXA、本地 Google Paten
 支持：
 
 - 查看完整结果；
+- 恢复某次 Run 的完整 IDEA、评估日、日期依据和预算快照；
 - 相同配置重新运行；
 - 修改 IDEA 后创建新 Run；
 - 复制为新 Case；
@@ -405,7 +406,7 @@ Provider 不是普通用户设置项。前端只显示 EXA、本地 Google Paten
 
 ### 7.1 Case
 
-Case 表示一个可持续迭代的 IDEA：
+Case 表示一个可持续迭代的技术方案组。标题用于历史导航，不进入模型判断；新建标题按去除首尾空格后不区分英文大小写保持唯一，既有同名历史以短 Case ID 区分：
 
 ```text
 idea_cases
@@ -439,7 +440,7 @@ idea_runs
   completed_at INTEGER NULL
 ```
 
-同一个 Case 可以包含多个 Run。重新分析必须创建新 `run_id`。
+同一个 Case 可以包含多个 Run。每个 Run 保存独立输入和输入哈希，任何重新分析都必须创建新 `run_id`。前端查看历史 Run 时恢复其输入快照；用户编辑后提交表示创建同 Case 的方案变体，“重新运行”表示复制原输入和预算，两者均不得覆盖原 Run。
 
 ### 7.3 其他核心表
 
@@ -905,6 +906,8 @@ POST   /api/system/cache/cleanup
 - 状态和错误码。
 
 每个 Run 的详细调试事件追加到 `workspace/debug/idea-runs/{run_id}.jsonl`。前端通过 `/api/idea/runs/{run_id}/debug` 聚合最新步骤 attempt、Tool Call 摘要和 JSONL 事件；该目录整体由 Git 忽略。调试数据只保存输入字符数、Provider、操作、状态、结果数、耗时、usage 计数和错误摘要，不保存 API Key、Authorization、完整 Prompt、完整用户输入或完整模型输出。
+
+面向用户的创造性、价值、审计、限制和报告说明不仅在 Prompt 中要求简体中文，还必须通过结构化客户端的语言门禁。无中文或明显以英文为主的说明视为验证失败，并在既定结构化重试预算内要求模型修正；重试耗尽则该步骤失败，不得持久化英文判断。历史报告与 Manifest 不可改写，前端对修复前英文报告显示中文兼容说明并提示重新运行。
 
 运行日志不默认打印完整 IDEA、完整权利要求、完整工具输出或完整模型输出。内部共享不等于应把大文本和密钥写进日志。
 

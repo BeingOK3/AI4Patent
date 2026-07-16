@@ -351,6 +351,13 @@ class Database:
         timestamp = now_ms()
         case_id = str(uuid.uuid4())
         with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            duplicate = connection.execute(
+                "SELECT case_id FROM idea_cases WHERE title = ? COLLATE NOCASE",
+                (clean_title,),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("case title already exists")
             connection.execute(
                 "INSERT INTO idea_cases(case_id,title,created_at,updated_at) VALUES(?,?,?,?)",
                 (case_id, clean_title, timestamp, timestamp),
@@ -511,9 +518,13 @@ class Database:
         with self.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT run_id,case_id,parent_run_id,status,evaluation_date,analysis_scope,
-                       model,limitation_json,created_at,started_at,completed_at,error_code
-                FROM idea_runs WHERE case_id = ? ORDER BY created_at DESC, rowid DESC
+                SELECT r.run_id,r.case_id,r.parent_run_id,r.status,r.evaluation_date,
+                       r.analysis_scope,r.model,r.limitation_json,r.created_at,r.started_at,
+                       r.completed_at,r.error_code,i.input_hash,
+                       substr(replace(replace(i.input_text, char(13), ' '), char(10), ' '), 1, 160)
+                           AS input_preview
+                FROM idea_runs r JOIN run_inputs i ON i.run_id = r.run_id
+                WHERE r.case_id = ? ORDER BY r.created_at DESC, r.rowid DESC
                 """,
                 (case_id,),
             ).fetchall()

@@ -460,3 +460,12 @@
 - 涉及文件：`backend/idea/document_analysis.py`、`execution.py`、`retrieval.py`、`audit.py`、`reporting.py`、`start.sh`、相关测试、技术设计和开发日志。
 - 测试：三组随机真实 DeepSeek/双 Provider Run，其中两组并发；前两组均 `COMPLETED_WITH_LIMITATIONS`，分别 33/37 次 Tool Call，第三组首次暴露深读硬门槛后按不可变历史保留；同输入修复后重跑 15 次 Tool Call、11/11 步一次通过。新增公开号回显、证据别名、兄弟任务取消、共享全文保留、深读降级、中文报告与限制消息回归；完整后端测试、`compileall`、Shell 语法和 `git diff --check` 通过。
 - 历史语义与凭证：所有失败和成功 Run 均保留，不修改历史报告；API Key 只进入获授权的测试进程，未写入配置、数据库、日志、文档或提交内容。
+
+## 2026-07-16 — IDEA-REPORT-001
+
+- 类型：最终报告新颖性一致性校验误判修复。
+- 现场证据：Run `e51e3410-5093-4769-a0b2-bdec0bdd98f9` 已完成 15 篇深读，确定性新颖性结果为 `NOT_NOVEL`、置信度 1.0，单篇破坏性文献为 `CN111597801A`，审计无问题；三个报告 Composer 调用均成功，但 `AUDIT_AND_REPORT` 三次被 `report narrative contains a conflicting novelty conclusion` 拒绝，未写入报告。
+- 根因：旧校验使用普通子串搜索；正确短语“不具备新颖性”包含“具备新颖性”，报告后文重复正确否定结论时被误判为相反结论。
+- 修复：三种中文结论改用有边界的完整短语匹配，否定短语优先，肯定短语使用负向后行断言保护；同一正确结论可重复出现，真正混入其他两种结论仍严格失败。
+- 测试：新增三种结论重复出现均通过、否定结论后混入肯定结论仍拒绝的回归；旧的“前缀正确但后文矛盾”测试继续保留。
+- 历史语义：失败 Run 保持不可变；修复后需要通过“重新运行”创建新 Run 才会生成报告。

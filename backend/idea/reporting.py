@@ -28,6 +28,9 @@ Chinese novelty label. Recommendations may explain next steps but may not claim 
 PUBLICATION_PATTERN = re.compile(
     r"\b(?:CN|US|EP|WO|JP|KR)\s*[-/]?\s*\d{5,}[A-Z0-9]*\b", re.IGNORECASE
 )
+NOVELTY_LABEL_PATTERN = re.compile(
+    r"不具备新颖性|新颖性结论不确定|(?<!不)具备新颖性"
+)
 
 JUDGMENT_LABELS = {
     "FILE": "建议申请",
@@ -331,13 +334,10 @@ class ReportService:
                 *narrative.action_recommendations,
             ]
         )
-        remainder = all_narrative.replace(novelty_label, "", 1)
-        conflicting_labels = {
-            "具备新颖性",
-            "不具备新颖性",
-            "新颖性结论不确定",
-        } - {novelty_label}
-        if any(label in remainder for label in conflicting_labels):
+        detected_labels = {
+            match.group(0) for match in NOVELTY_LABEL_PATTERN.finditer(all_narrative)
+        }
+        if detected_labels - {novelty_label}:
             raise AgentExecutionError("report narrative contains a conflicting novelty conclusion")
         known = {ReportService._identifier(value) for value in known_publications}
         text = canonical_json(narrative.model_dump(mode="json"))

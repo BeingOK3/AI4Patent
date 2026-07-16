@@ -144,6 +144,31 @@ class ReportingTests(unittest.TestCase):
                 self.run_id, idea(), novelty(), [], value(), []
             ))
 
+    def test_repeated_expected_novelty_label_is_not_a_conflict(self) -> None:
+        for label in ("具备新颖性", "不具备新颖性", "新颖性结论不确定"):
+            with self.subTest(label=label):
+                narrative = ReportComposerOutput.model_validate({
+                    "executive_summary": f"总体判断为{label}。",
+                    "novelty_statement": f"{label}，并且证据支持该结论。",
+                    "inventive_step_statement": "创造性另行判断。",
+                    "value_statement": f"价值建议以{label}为前提。",
+                    "simulated_office_action": "审查员将核验证据。",
+                    "action_recommendations": [f"围绕{label}准备答复。"],
+                })
+                ReportService._validate_narrative(narrative, label, set())
+
+    def test_negative_label_does_not_hide_a_positive_conclusion(self) -> None:
+        narrative = ReportComposerOutput.model_validate({
+            "executive_summary": "总体判断不具备新颖性。",
+            "novelty_statement": "不具备新颖性，存在单篇破坏性文献。",
+            "inventive_step_statement": "但后文错误宣称具备新颖性。",
+            "value_statement": "不建议申请。",
+            "simulated_office_action": "审查员将核验证据。",
+            "action_recommendations": ["调整方案。"],
+        })
+        with self.assertRaisesRegex(AgentExecutionError, "conflicting novelty"):
+            ReportService._validate_narrative(narrative, "不具备新颖性", set())
+
 
 if __name__ == "__main__":
     unittest.main()
